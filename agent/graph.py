@@ -129,29 +129,111 @@ class RegulatoryAgent:
         current = getattr(self, attribute)
         if current is not None:
             return current
-        from core.codex_client import CodexClient
+        from core.providers import create_generation_client
 
-        model = {
-            "planner": self.settings.planner_model,
-            "filter": self.settings.filter_model,
-            "executor": self.settings.report_model,
-            "evaluator": self.settings.judge_model,
-        }[role]
-        reasoning_effort = {
-            "planner": self.settings.planner_reasoning_effort,
-            "filter": self.settings.filter_reasoning_effort,
-            "executor": self.settings.report_reasoning_effort,
-            "evaluator": self.settings.judge_reasoning_effort,
-        }[role]
-        current = CodexClient(
-            executable=self.settings.codex_cli_path,
+        provider = self._provider_for_role(role)
+        model = self._model_for_role(role)
+        reasoning_effort = self._reasoning_for_role(role)
+        # GPT-4o/4o-mini no aceptan reasoning.effort en Responses. Codex y los
+        # servidores abiertos sí pueden usarlo cuando lo implementan.
+        if provider == "openai" and model.startswith("gpt-4o"):
+            reasoning_effort = None
+        current = create_generation_client(
+            provider,
             model=model,
             reasoning_effort=reasoning_effort,
-            timeout_seconds=self.settings.codex_timeout_seconds,
-            workdir=self.settings.codex_workdir,
+            timeout_seconds=self._timeout_for_provider(provider),
+            api_key=self._api_key_for_provider(provider),
+            base_url=self._base_url_for_provider(provider),
+            codex_executable=str(getattr(self.settings, "codex_cli_path", "codex")),
+            codex_workdir=getattr(self.settings, "codex_workdir", None),
         )
         setattr(self, attribute, current)
         return current
+
+    def _provider_for_role(self, role: str) -> str:
+        resolver = getattr(self.settings, "provider_for_role", None)
+        if callable(resolver):
+            return str(resolver(role))
+        override_name = {
+            "planner": "planner_provider",
+            "filter": "filter_provider",
+            "executor": "report_provider",
+            "evaluator": "judge_provider",
+        }[role]
+        return str(
+            getattr(self.settings, override_name, None)
+            or getattr(self.settings, "ai_provider", "codex")
+        )
+
+    def _model_for_role(self, role: str) -> str:
+        resolver = getattr(self.settings, "model_for_role", None)
+        if callable(resolver):
+            return str(resolver(role))
+        return str(
+            {
+                "planner": self.settings.planner_model,
+                "filter": self.settings.filter_model,
+                "executor": self.settings.report_model,
+                "evaluator": self.settings.judge_model,
+            }[role]
+        )
+
+    def _reasoning_for_role(self, role: str) -> str | None:
+        resolver = getattr(self.settings, "reasoning_effort_for_role", None)
+        if callable(resolver):
+            return str(resolver(role))
+        return str(
+            {
+                "planner": self.settings.planner_reasoning_effort,
+                "filter": self.settings.filter_reasoning_effort,
+                "executor": self.settings.report_reasoning_effort,
+                "evaluator": self.settings.judge_reasoning_effort,
+            }[role]
+        )
+
+    def _timeout_for_provider(self, provider: str) -> float:
+        if provider == "codex":
+            return float(getattr(self.settings, "codex_timeout_seconds", 240.0))
+        return float(getattr(self.settings, "provider_timeout_seconds", 240.0))
+
+    def _api_key_for_provider(self, provider: str) -> str | None:
+        secret = getattr(self.settings, f"{provider}_api_key", None)
+        if secret is None:
+            return None
+        reveal = getattr(secret, "get_secret_value", None)
+        return str(reveal() if callable(reveal) else secret) or None
+
+    def _base_url_for_provider(self, provider: str) -> str | None:
+        if provider == "codex":
+            return None
+        return str(getattr(self.settings, f"{provider}_base_url", "")) or None
+
+    def _execution_metadata(self, **extra: Any) -> dict[str, Any]:
+        providers = {
+            role: self._provider_for_role(role)
+            for role in ("planner", "filter", "executor", "evaluator")
+        }
+        active = set(providers.values())
+        if active == {"codex"}:
+            billing_mode = "subscription"
+            cost_attribution = "not_attributable"
+        elif active <= {"ollama", "vllm"}:
+            billing_mode = "self_hosted"
+            cost_attribution = "external_compute"
+        elif active == {"openai"}:
+            billing_mode = "api"
+            cost_attribution = "token_pricing"
+        else:
+            billing_mode = "mixed"
+            cost_attribution = "per_call"
+        return {
+            "provider": providers.get("executor"),
+            "providers_by_role": providers,
+            "billing_mode": billing_mode,
+            "cost_attribution": cost_attribution,
+            **extra,
+        }
 
     def _invoke(self, llm: Any, prompt: str) -> Any:
         callback = self._active_callback
@@ -244,21 +326,19 @@ class RegulatoryAgent:
         )
 
     def planner_node(self, state: AgentState) -> dict[str, Any]:
-        """Nodo 1: plan acotado; Luna queda disponible para solicitudes inyectadas.
+        """Nodo 1: plan acotado con routing barato y fallback determinista.
 
-        El informe diario estandar no necesita gastar un turno de modelo para
-        decidir siete fuentes fijas y una ventana conocida. En integraciones que
-        inyectan un planner especializado se conserva el routing Luna y se valida
-        su salida antes de incorporarla.
+        Codex conserva el plan determinista para no abrir un proceso adicional en
+        el perfil local. OpenAI, Ollama y vLLM activan su modelo de planificación,
+        validan el JSON y vuelven al contrato fijo ante cualquier fallo.
         """
 
         plan = self._default_plan(state)
         errors = list(state.get("errors") or [])
-        with self._tracked_step(state, "planner", model=self.settings.planner_model):
-            # Solo una dependencia inyectada activa el Planner generativo. El
-            # perfil de produccion usa el plan determinista y evita el overhead
-            # base de iniciar un proceso Codex para una decision repetitiva.
+        with self._tracked_step(state, "planner", model=self._model_for_role("planner")):
             llm = self._planner_llm
+            if llm is None and self._provider_for_role("planner") != "codex":
+                llm = self._get_llm("planner")
             if llm is None:
                 return {"plan": plan, "errors": errors}
             prompt = (
@@ -414,11 +494,13 @@ class RegulatoryAgent:
         state: AgentState,
         candidates: Sequence[Mapping[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Clasifica relevancia con Luna solo cuando se inyecta explicitamente."""
+        """Clasifica relevancia con el modelo barato o conserva todo como fallback."""
 
         if not candidates:
             return []
         llm = self._filter_llm
+        if llm is None and self._provider_for_role("filter") != "codex":
+            llm = self._get_llm("filter")
         if llm is None:
             return [dict(document) for document in candidates]
         catalogue = [
@@ -468,7 +550,7 @@ class RegulatoryAgent:
         with self._tracked_step(
             state,
             "scraper",
-            model=getattr(self.settings, "filter_model", self.settings.planner_model),
+            model=self._model_for_role("filter"),
         ):
             try:
                 plan = state.get("plan") or self._default_plan(state)
@@ -529,7 +611,7 @@ class RegulatoryAgent:
         }
 
     def executor_node(self, state: AgentState) -> dict[str, Any]:
-        """Nodo 3: redaccion final con Codex Sol y barrera local de citas."""
+        """Nodo 3: redacción generativa con barrera local de citas."""
 
         errors = list(state.get("errors") or [])
         documents = list(
@@ -541,7 +623,7 @@ class RegulatoryAgent:
             keywords=state.get("keywords"),
         )
         report_mode = "deterministic_fallback"
-        with self._tracked_step(state, "executor", model=self.settings.report_model):
+        with self._tracked_step(state, "executor", model=self._model_for_role("executor")):
             llm = self._get_llm("executor") if documents else None
             if llm is not None:
                 evidence = format_evidence_catalog(
@@ -696,7 +778,7 @@ class RegulatoryAgent:
             missing_citation_lines=list(baseline.get("missing_citation_lines") or []),
             unknown_citations=list(baseline.get("unknown_citations") or []),
             observations=[sanitize_error(str(item)) for item in observations[:10]],
-            model=self.settings.judge_model,
+            model=self._model_for_role("evaluator"),
             mode=mode,  # type: ignore[typeddict-item]
         )
 
@@ -712,9 +794,11 @@ class RegulatoryAgent:
         judgement = deterministic_judgement(
             report,
             documents,
-            model=self.settings.judge_model,
+            model=self._model_for_role("evaluator"),
         )
-        with self._tracked_step(state, "evaluator", model=self.settings.judge_model):
+        with self._tracked_step(
+            state, "evaluator", model=self._model_for_role("evaluator")
+        ):
             llm = self._get_llm("evaluator") if documents else None
             if llm is not None:
                 try:
@@ -732,7 +816,7 @@ class RegulatoryAgent:
                         revised_baseline = deterministic_judgement(
                             revised_report,
                             documents,
-                            model=self.settings.judge_model,
+                            model=self._model_for_role("evaluator"),
                         )
                         judgement = self._judge_with_llm(
                             llm,
@@ -832,13 +916,10 @@ class RegulatoryAgent:
         self.database.start_execution(
             "daily_report",
             user_id=user_id,
-            metadata={
-                "provider": "codex_cli",
-                "billing_mode": "subscription",
-                "cost_attribution": "not_attributable",
-                "keywords": list(keywords or []),
-                "alert_rule_count": len(alert_rules or []),
-            },
+            metadata=self._execution_metadata(
+                keywords=list(keywords or []),
+                alert_rule_count=len(alert_rules or []),
+            ),
             execution_id=execution_id,
         )
         state = initial_agent_state(
@@ -877,19 +958,16 @@ class RegulatoryAgent:
                     status="rejected",
                     error="El informe no supero la barrera LLM-as-Judge",
                     latency_seconds=time.perf_counter() - started,
-                    metadata={
-                        "provider": "codex_cli",
-                        "billing_mode": "subscription",
-                        "cost_attribution": "not_attributable",
-                        "keywords": list(keywords or []),
-                        "alert_rule_count": len(alert_rules or []),
-                        "judge": result.get("judge"),
-                        "quality_status": result.get("quality_status"),
-                        "report_mode": result.get("report_mode"),
-                        "capture_stats": result.get("capture_stats"),
-                        "index_stats": result.get("index_stats"),
-                        "errors": result.get("errors"),
-                    },
+                    metadata=self._execution_metadata(
+                        keywords=list(keywords or []),
+                        alert_rule_count=len(alert_rules or []),
+                        judge=result.get("judge"),
+                        quality_status=result.get("quality_status"),
+                        report_mode=result.get("report_mode"),
+                        capture_stats=result.get("capture_stats"),
+                        index_stats=result.get("index_stats"),
+                        errors=result.get("errors"),
+                    ),
                 )
                 raise ReportQualityError(
                     "El informe fue rechazado por la barrera de calidad; no se ha "
@@ -925,21 +1003,18 @@ class RegulatoryAgent:
                 execution_id,
                 status="completed",
                 latency_seconds=time.perf_counter() - started,
-                metadata={
-                    "provider": "codex_cli",
-                    "billing_mode": "subscription",
-                    "cost_attribution": "not_attributable",
-                    "keywords": list(keywords or []),
-                    "alert_rule_count": len(alert_rules or []),
-                    "judge": result.get("judge"),
-                    "quality_status": result.get("quality_status"),
-                    "report_mode": result.get("report_mode"),
-                    "report_id": report_id,
-                    "capture_stats": result.get("capture_stats"),
-                    "index_stats": result.get("index_stats"),
-                    "artifacts": result.get("artifacts"),
-                    "errors": result.get("errors"),
-                },
+                metadata=self._execution_metadata(
+                    keywords=list(keywords or []),
+                    alert_rule_count=len(alert_rules or []),
+                    judge=result.get("judge"),
+                    quality_status=result.get("quality_status"),
+                    report_mode=result.get("report_mode"),
+                    report_id=report_id,
+                    capture_stats=result.get("capture_stats"),
+                    index_stats=result.get("index_stats"),
+                    artifacts=result.get("artifacts"),
+                    errors=result.get("errors"),
+                ),
             )
             return result
         except ReportQualityError:

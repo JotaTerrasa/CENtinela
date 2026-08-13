@@ -2,3 +2,5 @@
 
 # CVE-2025-71176 queda corregido a partir de pytest 9.0.3.
 pytest==9.0.3
+ruff==0.15.4
+pip-audit==2.10.0

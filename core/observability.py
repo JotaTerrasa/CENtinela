@@ -43,13 +43,27 @@ _ERROR_REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
-def sanitize_error(error: BaseException | str, *, max_length: int = 500) -> str:
+def sanitize_error(
+    error: BaseException | str,
+    *,
+    max_length: int = 500,
+    sensitive_values: Sequence[str] = (),
+) -> str:
     """Reduce un error a texto trazable sin secretos, prompts ni cuerpos de peticion."""
 
     if max_length < 80:
         raise ValueError("max_length debe ser al menos 80")
     prefix = f"{type(error).__name__}: " if isinstance(error, BaseException) else ""
     message = str(error)
+    # Los proxies no siempre etiquetan una credencial como header o ``api_key``.
+    # Sustituir también los valores configurados evita persistir una clave desnuda.
+    secrets = sorted(
+        {str(value) for value in sensitive_values if value is not None and str(value)},
+        key=len,
+        reverse=True,
+    )
+    for secret in secrets:
+        message = message.replace(secret, "[REDACTED_SECRET]")
     for pattern, replacement in _ERROR_REDACTIONS:
         message = pattern.sub(replacement, message)
     message = re.sub(r"\s+", " ", message).strip()
@@ -319,7 +333,7 @@ class CostTrackingCallback(BaseCallbackHandler):
         return int(prompt or 0), int(completion or 0)
 
     @classmethod
-    def _extract_usage(cls, response: LLMResult) -> tuple[int, int]:
+    def _extract_usage(cls, response: LLMResult) -> tuple[int, int] | None:
         llm_output = response.llm_output or {}
         direct = cls._usage_from_mapping(llm_output)
         if direct is not None:
@@ -345,7 +359,7 @@ class CostTrackingCallback(BaseCallbackHandler):
                     prompt_total += parsed[0]
                     completion_total += parsed[1]
                     found = True
-        return (prompt_total, completion_total) if found else (0, 0)
+        return (prompt_total, completion_total) if found else None
 
     @staticmethod
     def _response_model(response: LLMResult) -> str | None:
@@ -363,7 +377,8 @@ class CostTrackingCallback(BaseCallbackHandler):
         parent_run_id: Any | None = None,
         **kwargs: Any,
     ) -> None:
-        prompt_tokens, completion_tokens = self._extract_usage(response)
+        usage = self._extract_usage(response)
+        prompt_tokens, completion_tokens = usage or (0, 0)
         key = str(run_id)
         with self._lock:
             context = self._runs.pop(key, None)
@@ -377,6 +392,10 @@ class CostTrackingCallback(BaseCallbackHandler):
                 started_perf=time.perf_counter(),
                 metadata=dict(self.metadata),
             )
+        context.metadata = {
+            **context.metadata,
+            "token_usage_status": "reported" if usage is not None else "not_reported",
+        }
         model = self._response_model(response) or context.model
         latency = max(0.0, time.perf_counter() - context.started_perf)
         self._record(
@@ -461,43 +480,87 @@ class CostTrackingCallback(BaseCallbackHandler):
         status: str,
         error: str | None = None,
     ) -> TokenUsage:
-        billing_mode = str(context.metadata.get("billing_mode") or "")
+        billing_mode = str(context.metadata.get("billing_mode") or "").casefold()
         subscription_call = billing_mode in {"subscription", "chatgpt_subscription"}
-        try:
-            cost_usd, cost_clp = calculate_cost(
-                prompt_tokens,
-                completion_tokens,
-                model,
-                pricing=self.pricing,
-                usd_to_clp=self.usd_to_clp,
-            )
-        except KeyError as exc:
-            # La observabilidad nunca convierte una respuesta LLM valida en un fallo.
-            # Settings impide configurar modelos sin precio; esta rama protege aliases
-            # inesperados reportados por el proveedor y los marca para reconciliacion.
+        self_hosted_call = billing_mode in {"self_hosted", "self-hosted", "compute"}
+        usage_missing = context.metadata.get("token_usage_status") == "not_reported"
+        if usage_missing and not subscription_call and not self_hosted_call:
             cost_usd, cost_clp = 0.0, 0.0
-            if subscription_call:
-                context.metadata = {
-                    **context.metadata,
-                    "pricing_status": "not_applicable",
-                    "cost_status": "included_not_attributable",
-                }
+            context.metadata = {
+                **context.metadata,
+                "pricing_status": "not_evaluated",
+                "api_cost_status": "unavailable_no_usage",
+                "cost_status": "not_calculated",
+            }
+        elif self_hosted_call:
+            # El coste del endpoint por token es cero, pero CPU/GPU, memoria y energía
+            # siguen teniendo coste. Se mantienen fuera de ``cost_usd`` para no mezclar
+            # una estimación de infraestructura con una tarifa exacta del proveedor.
+            cost_usd, cost_clp = 0.0, 0.0
+            configured_rate = context.metadata.get("compute_usd_per_hour")
+            if configured_rate is None:
+                configured_rate = getattr(
+                    self.settings, "self_hosted_compute_usd_per_hour", None
+                )
+            compute_metadata: dict[str, Any] = {
+                "pricing_status": "not_applicable",
+                "api_cost_status": "not_applicable",
+            }
+            if configured_rate is None:
+                compute_metadata["compute_cost_status"] = "external_not_configured"
             else:
-                context.metadata = {
-                    **context.metadata,
-                    "pricing_status": "unknown",
-                    "pricing_error": sanitize_error(exc),
-                }
+                rate = max(0.0, float(configured_rate))
+                estimated_usd = rate * max(0.0, latency_seconds) / 3_600.0
+                compute_metadata.update(
+                    {
+                        "compute_cost_status": "estimated_from_runtime",
+                        "compute_usd_per_hour": rate,
+                        "estimated_compute_cost_usd": estimated_usd,
+                        "estimated_compute_cost_clp": estimated_usd * self.usd_to_clp,
+                    }
+                )
+            context.metadata = {**context.metadata, **compute_metadata}
         else:
-            if subscription_call:
-                # El cero almacenado es compatibilidad del esquema, no una
-                # estimacion del coste economico de la suscripcion.
+            try:
+                cost_usd, cost_clp = calculate_cost(
+                    prompt_tokens,
+                    completion_tokens,
+                    model,
+                    pricing=self.pricing,
+                    usd_to_clp=self.usd_to_clp,
+                )
+            except KeyError as exc:
+                # La observabilidad nunca convierte una respuesta LLM valida en un
+                # fallo. Un alias desconocido queda pendiente de reconciliación.
                 cost_usd, cost_clp = 0.0, 0.0
-                context.metadata = {
-                    **context.metadata,
-                    "pricing_status": "not_applicable",
-                    "cost_status": "included_not_attributable",
-                }
+                if subscription_call:
+                    context.metadata = {
+                        **context.metadata,
+                        "pricing_status": "not_applicable",
+                        "cost_status": "included_not_attributable",
+                    }
+                else:
+                    context.metadata = {
+                        **context.metadata,
+                        "pricing_status": "unknown",
+                        "pricing_error": sanitize_error(exc),
+                    }
+            else:
+                if subscription_call:
+                    # El cero almacenado es compatibilidad del esquema, no una
+                    # estimacion del coste economico de la suscripcion.
+                    cost_usd, cost_clp = 0.0, 0.0
+                    context.metadata = {
+                        **context.metadata,
+                        "pricing_status": "not_applicable",
+                        "cost_status": "included_not_attributable",
+                    }
+                else:
+                    context.metadata = {
+                        **context.metadata,
+                        "pricing_status": "configured",
+                        "api_cost_status": "attributable",
+                    }
         usage = TokenUsage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,

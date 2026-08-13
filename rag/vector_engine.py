@@ -1,7 +1,7 @@
 """Motor RAG persistente y local de CENtinela.
 
 Chroma almacena texto, embeddings y metadatos de procedencia. Los vectores se
-calculan con un hashing lexico-vectorial local, determinista y sin descargas.
+calculan con hashing local o un proveedor configurable de embeddings.
 Cada fragmento queda marcado con la version del embedding y nunca se mezclan
 espacios vectoriales en una consulta.
 """
@@ -260,12 +260,39 @@ class VectorEngine:
     def _get_embeddings(self) -> Any:
         if self._embeddings is not None:
             return self._embeddings
-        self._embeddings = LocalHashEmbeddings()
+        provider = str(getattr(self.settings, "embedding_provider", "local_hash"))
+        if provider == "local_hash":
+            self._embeddings = LocalHashEmbeddings()
+            return self._embeddings
+
+        from core.providers import create_embeddings_client
+
+        model_resolver = getattr(self.settings, "embedding_model_for_provider", None)
+        model = (
+            str(model_resolver())
+            if callable(model_resolver)
+            else str(getattr(self.settings, f"{provider}_embedding_model"))
+        )
+        secret = getattr(self.settings, f"{provider}_api_key", None)
+        reveal = getattr(secret, "get_secret_value", None)
+        api_key = str(reveal() if callable(reveal) else secret) if secret else None
+        self._embeddings = create_embeddings_client(
+            provider,
+            model=model,
+            timeout_seconds=float(
+                getattr(self.settings, "provider_timeout_seconds", 240.0)
+            ),
+            api_key=api_key,
+            base_url=str(getattr(self.settings, f"{provider}_base_url")),
+            callback=self.callback,
+        )
         return self._embeddings
 
     def _embedding_identity(self) -> str:
         embeddings = self._get_embeddings()
-        explicit_name = getattr(embeddings, "model_name", None) or getattr(
+        explicit_name = getattr(embeddings, "embedding_identity", None) or getattr(
+            embeddings, "model_name", None
+        ) or getattr(
             embeddings, "model", None
         )
         if explicit_name:
@@ -276,24 +303,55 @@ class VectorEngine:
     def _get_llm(self) -> Any | None:
         if self._llm is not None:
             return self._llm
-        try:
-            from core.codex_client import CodexClient
-        except ImportError as exc:  # pragma: no cover - instalacion incompleta
-            raise VectorEngineError(
-                "No esta disponible el cliente local de Codex"
-            ) from exc
-
-        executable = str(getattr(self.settings, "codex_cli_path", "codex"))
-        model = getattr(self.settings, "filter_model", None)
+        provider_resolver = getattr(self.settings, "provider_for_role", None)
+        provider = (
+            str(provider_resolver("filter"))
+            if callable(provider_resolver)
+            else str(getattr(self.settings, "ai_provider", "codex"))
+        )
+        model_resolver = getattr(self.settings, "model_for_role", None)
+        model = (
+            str(model_resolver("filter"))
+            if callable(model_resolver)
+            else str(getattr(self.settings, "filter_model", "gpt-5.6-luna"))
+        )
         reasoning_effort = getattr(self.settings, "filter_reasoning_effort", None)
-        timeout_seconds = float(getattr(self.settings, "codex_timeout_seconds", 240.0))
-        workdir = getattr(self.settings, "codex_workdir", None)
-        self._llm = CodexClient(
-            executable=executable,
+        if provider == "codex":
+            # Rama explícita por compatibilidad y para mantener el cliente CLI
+            # completamente aislado de los secretos/endpoints HTTP.
+            try:
+                from core.codex_client import CodexClient
+            except ImportError as exc:  # pragma: no cover - instalacion incompleta
+                raise VectorEngineError(
+                    "No esta disponible el cliente local de Codex"
+                ) from exc
+            self._llm = CodexClient(
+                executable=str(getattr(self.settings, "codex_cli_path", "codex")),
+                model=model,
+                reasoning_effort=reasoning_effort,
+                timeout_seconds=float(
+                    getattr(self.settings, "codex_timeout_seconds", 240.0)
+                ),
+                workdir=getattr(self.settings, "codex_workdir", None),
+            )
+            return self._llm
+
+        from core.providers import create_generation_client
+
+        secret = getattr(self.settings, f"{provider}_api_key", None)
+        reveal = getattr(secret, "get_secret_value", None)
+        api_key = str(reveal() if callable(reveal) else secret) if secret else None
+        if provider == "openai" and model.startswith("gpt-4o"):
+            reasoning_effort = None
+        self._llm = create_generation_client(
+            provider,
             model=model,
             reasoning_effort=reasoning_effort,
-            timeout_seconds=timeout_seconds,
-            workdir=workdir,
+            timeout_seconds=float(
+                getattr(self.settings, "provider_timeout_seconds", 240.0)
+            ),
+            api_key=api_key,
+            base_url=str(getattr(self.settings, f"{provider}_base_url")),
         )
         return self._llm
 

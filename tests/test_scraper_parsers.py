@@ -7,7 +7,8 @@ import pytest
 from scrapers.chile_regulatory import ChileRegulatoryScraper, ScraperConfig
 
 
-NOW = lambda: datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
+def NOW() -> datetime:
+    return datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
