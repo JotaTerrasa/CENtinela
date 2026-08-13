@@ -4,6 +4,7 @@
 .env.*
 !.env.example
 .codex/
+.streamlit/secrets.toml
 auth.json
 .venv/
 __pycache__/

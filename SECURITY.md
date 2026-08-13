@@ -7,6 +7,16 @@ imagen Docker expone Streamlit únicamente en `127.0.0.1:8501`; no debe publicar
 directamente en Internet ni tratarse como un sistema de decisión jurídica. Los
 datos internos de Grenergy quedan explícitamente fuera de alcance.
 
+La única excepción publicable sin completar el hardening productivo es
+`PUBLIC_DEMO_MODE`: un replay inmutable que verifica y carga en memoria
+artefactos públicos de `docs/demo`. No inicializa SQLite, no prepara rutas de
+runtime ni crea identidades por visitante. Bloquea en servidor scraping,
+indexación y llamadas generativas, y
+rechaza secretos de proveedores y credenciales bootstrap. La UI lo etiqueta
+como evidencia histórica y marca la alerta aparte como simulación UI. No es un
+entorno para introducir información confidencial ni una autorización para
+exponer el modo interactivo del MVP.
+
 ## Activos protegidos
 
 - Sesión ChatGPT administrada por Codex CLI y claves/gateway de proveedores HTTP.
@@ -27,6 +37,7 @@ datos internos de Grenergy quedan explícitamente fuera de alcance.
 | Fuga de secretos por argumentos o logs | El prompt viaja por `stdin`; credenciales, contraseñas y contenido del fichero de autenticación no se leen ni se registran. Los errores se sanitizan antes de persistirse. |
 | Cita inventada o informe débil | Una barrera determinista comprueba todas las afirmaciones materiales y URLs; después Terra actúa como LLM-as-Judge. Los informes rechazados se etiquetan como tales y no se reutilizan como memoria aprobada. |
 | Fuerza bruta o robo de la base local | Las contraseñas se almacenan con PBKDF2-HMAC y sal individual; el contenedor corre como usuario no root. En producción se sustituirá por SSO y un gestor de secretos. |
+| Exposición accidental de la demo | El modo público no ofrece registro/login ni persistencia por visitante, rechaza credenciales de modelos y bootstrap, valida hashes de los artefactos y se niega a arrancar con `APP_ENV=production`. |
 | Dependencia vulnerable de Chroma | Se fija `chromadb==0.6.3`, fuera del rango afectado por CVE-2026-45829, y Chroma funciona embebido: no existe servidor Chroma expuesto. La telemetría se desactiva en `PersistentClient`, PostHog se fija a una versión compatible y un volumen nuevo evita modificar índices legacy 1.x. |
 
 ## Límites conocidos

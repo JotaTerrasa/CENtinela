@@ -42,6 +42,79 @@ def test_admin_credentials_must_be_configured_together(tmp_path: Path) -> None:
         )
 
 
+def test_public_demo_mode_is_forbidden_in_production(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="PUBLIC_DEMO_MODE"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            public_demo_mode=True,
+            database_path=tmp_path / "db.sqlite3",
+            chroma_path=tmp_path / "chroma",
+            reports_path=tmp_path / "reports",
+            codex_workdir=tmp_path / "codex-work",
+        )
+
+
+def test_public_demo_settings_never_prepare_runtime_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = tmp_path / "runtime" / "centinela.db"
+    chroma_path = tmp_path / "vectors"
+    reports_path = tmp_path / "reports"
+    codex_workdir = tmp_path / "codex-work"
+
+    def reject_mkdir(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("PUBLIC_DEMO_MODE no debe invocar Path.mkdir")
+
+    monkeypatch.setattr(Path, "mkdir", reject_mkdir)
+    settings = Settings(
+        _env_file=None,
+        app_env="staging",
+        public_demo_mode=True,
+        database_path=database_path,
+        chroma_path=chroma_path,
+        reports_path=reports_path,
+        codex_workdir=codex_workdir,
+    )
+
+    assert settings.database_path == database_path
+    assert settings.chroma_path == chroma_path
+    assert settings.reports_path == reports_path
+    assert settings.codex_workdir == codex_workdir
+    assert not database_path.parent.exists()
+    assert not chroma_path.exists()
+    assert not reports_path.exists()
+    assert not codex_workdir.exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("openai_api_key", "sk-test", "secretos de proveedores"),
+        ("ollama_api_key", "private", "secretos de proveedores"),
+        ("vllm_api_key", "private", "secretos de proveedores"),
+        ("default_admin_username", "admin", "credenciales bootstrap"),
+    ],
+)
+def test_public_demo_rejects_secrets_and_bootstrap_credentials(
+    tmp_path: Path, field: str, value: str, message: str
+) -> None:
+    values = {field: value}
+    if field == "default_admin_username":
+        values["default_admin_password"] = "change-me"
+    with pytest.raises(ValidationError, match=message):
+        Settings(
+            _env_file=None,
+            app_env="staging",
+            public_demo_mode=True,
+            database_path=tmp_path / "db.sqlite3",
+            chroma_path=tmp_path / "chroma",
+            reports_path=tmp_path / "reports",
+            codex_workdir=tmp_path / "codex-work",
+            **values,
+        )
+
+
 def test_empty_optional_admin_credentials_are_treated_as_unset(tmp_path: Path) -> None:
     settings = Settings(
         _env_file=None,

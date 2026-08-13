@@ -91,6 +91,9 @@ def test_users_alerts_news_reports_and_previous_memory(tmp_path: Path) -> None:
     assert execution["prompt_tokens"] == 100
     assert execution["completion_tokens"] == 20
     assert len(execution["llm_calls"]) == 1
+    assert database.list_executions(user_id=user_id)[0]["id"] == execution_id
+    other_user = database.create_user("otra", "otra-clave-segura")
+    assert database.list_executions(user_id=other_user) == []
 
     report_id = database.save_report(
         date(2026, 8, 13),

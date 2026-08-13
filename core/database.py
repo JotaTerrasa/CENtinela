@@ -784,11 +784,22 @@ class Database:
                 result["llm_calls"] = [self._decode_metadata(dict(item)) for item in calls]
         return result
 
-    def list_executions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    def list_executions(
+        self,
+        *,
+        limit: int = 50,
+        user_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        where = "WHERE user_id = ?" if user_id is not None else ""
+        parameters: tuple[Any, ...] = (
+            (user_id, max(1, min(int(limit), 1000)))
+            if user_id is not None
+            else (max(1, min(int(limit), 1000)),)
+        )
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM executions ORDER BY started_at DESC LIMIT ?",
-                (max(1, min(int(limit), 1000)),),
+                f"SELECT * FROM executions {where} ORDER BY started_at DESC LIMIT ?",
+                parameters,
             ).fetchall()
         return [self._decode_metadata(dict(row)) for row in rows]
 

@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "acceptance_artifact_replay",
+  "validated_at": "2026-08-13",
+  "trace_origin": {
+    "source": "SQLite local de la ejecución de aceptación",
+    "retained_fields": "identificadores, tiempos, modelos, tokens, latencias y categorías de facturación; sin prompts, respuestas privadas ni credenciales"
+  },
+  "latency_semantics": {
+    "execution.latency_seconds": "tiempo de pared del flujo completo",
+    "steps.latency_seconds": "tiempo de pared del nodo",
+    "llm_calls.latency_seconds": "tiempo de la invocación al modelo",
+    "sample-report.metrics.latency_seconds": "suma de latencias de las dos llamadas generativas"
+  },
+  "artifacts": {
+    "sample-report.json": "sha256:effc6ccbd351d672f703af3fbb17d210013f9ebbb622a38a260da7378e432206",
+    "sample-rag.json": "sha256:d581562c4c68c2e3ccbba683bcae578c1207f362dc4e8bf907ebc6efeb9e2a3c",
+    "validation-summary.json": "sha256:7753ec8336585f8b648805672d2e190a0f5d383321a2cf55baf65ac60bf8313d"
+  },
+  "acceptance_snapshot": {
+    "publications_in_dashboard": 53,
+    "sources_recovered": 7,
+    "citation_catalog_entries": 34,
+    "citation_catalog_sources": 6,
+    "note": "El catálogo conservado no contiene fechas de publicación, extractos ni la fila CEN del snapshot original. La UI no los reconstruye."
+  },
+  "ui_simulation": {
+    "evidence_replay": false,
+    "purpose": "Configuración ficticia y no persistente para demostrar la superficie de alertas; no forma parte de la evidencia histórica.",
+    "alerts": [
+      {
+        "id": 1,
+        "name": "Activos prioritarios",
+        "keywords": ["BESS", "almacenamiento", "transmisión"],
+        "sources": [],
+        "enabled": true,
+        "artifact_kind": "ui_simulation"
+      }
+    ]
+  },
+  "daily_report": {
+    "execution": {
+      "id": "76dbc034-963f-4c01-9af0-cb7dfe064d6a",
+      "workflow": "daily_report",
+      "status": "completed",
+      "started_at": "2026-08-13T18:41:53.133+00:00",
+      "finished_at": "2026-08-13T18:43:10.989+00:00",
+      "prompt_tokens": 35203,
+      "completion_tokens": 3702,
+      "cost_usd": 0.0,
+      "cost_clp": 0.0,
+      "latency_seconds": 77.85753036900041
+    },
+    "steps": [
+      {
+        "id": "8f09c4ad-80d1-4078-bd64-a9e629a4467a",
+        "step_name": "planner",
+        "model": "gpt-5.6-luna",
+        "status": "completed",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_seconds": 0.003495208999993338
+      },
+      {
+        "id": "92e12794-a0ba-4e9b-9224-63dd331b4edb",
+        "step_name": "scraper",
+        "model": "gpt-5.6-luna",
+        "status": "completed",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_seconds": 0.5187718759998461
+      },
+      {
+        "id": "78885def-72b8-487a-9e83-6b562851eb94",
+        "step_name": "executor",
+        "model": "gpt-5.6-sol",
+        "status": "completed",
+        "prompt_tokens": 17191,
+        "completion_tokens": 3144,
+        "latency_seconds": 62.75512952899953
+      },
+      {
+        "id": "8575f4b2-5924-4763-937a-5530e4f9daab",
+        "step_name": "evaluator",
+        "model": "gpt-5.6-terra",
+        "status": "completed",
+        "prompt_tokens": 18012,
+        "completion_tokens": 558,
+        "latency_seconds": 14.418618589999824
+      }
+    ],
+    "llm_calls": [
+      {
+        "id": "0a130dea-3f5a-4cc4-bc36-0331e386e1b6",
+        "step_id": "78885def-72b8-487a-9e83-6b562851eb94",
+        "model": "codex-subscription/gpt-5.6-sol",
+        "status": "completed",
+        "prompt_tokens": 17191,
+        "completion_tokens": 3144,
+        "latency_seconds": 62.7314069869999
+      },
+      {
+        "id": "b3cf036d-c97e-4344-8bc3-77eea6d3fabb",
+        "step_id": "8575f4b2-5924-4763-937a-5530e4f9daab",
+        "model": "codex-subscription/gpt-5.6-terra",
+        "status": "completed",
+        "prompt_tokens": 18012,
+        "completion_tokens": 558,
+        "latency_seconds": 14.405822715000795
+      }
+    ]
+  },
+  "rag": {
+    "execution": {
+      "id": "221ed6a0-7819-4d12-9fd7-b668ae576967",
+      "workflow": "rag_chat",
+      "status": "completed",
+      "started_at": "2026-08-13T18:46:27.620+00:00",
+      "finished_at": "2026-08-13T18:46:36.434+00:00",
+      "prompt_tokens": 12463,
+      "completion_tokens": 229,
+      "cost_usd": 0.0,
+      "cost_clp": 0.0,
+      "latency_seconds": 8.808233837999978
+    },
+    "steps": [],
+    "llm_calls": [
+      {
+        "id": "adb42b9e-6ee3-4b63-b92f-42aea84b8ca9",
+        "step_id": null,
+        "model": "codex-subscription/gpt-5.6-luna",
+        "status": "completed",
+        "prompt_tokens": 12463,
+        "completion_tokens": 229,
+        "latency_seconds": 8.441093170000386
+      }
+    ]
+  }
+}

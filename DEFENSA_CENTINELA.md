@@ -14,6 +14,8 @@ arquitectura final:
 - coste API, suscripción e infraestructura self-hosted claramente separados;
 - persistencia, exportación y memoria únicamente para informes aprobados.
 
-También incluye el guion de demo, contingencias, preguntas difíciles y la
-explicación de que el PDF oficial es agnóstico respecto al proveedor/modelo y la
-arquitectura ya demuestra portabilidad sin perder la ruta Codex validada.
+También incluye preguntas difíciles y la explicación de que el PDF oficial es
+agnóstico respecto al proveedor/modelo y la arquitectura ya demuestra
+portabilidad sin perder la ruta Codex validada. El recorrido cronometrado y las
+contingencias de presentación están en [`GUION_DEMO.md`](GUION_DEMO.md), y los
+gates previos al envío en [`CHECKLIST_ENTREGA.md`](CHECKLIST_ENTREGA.md).
