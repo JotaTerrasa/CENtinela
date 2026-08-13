@@ -2,43 +2,40 @@
 
 Guion para una exposición de 8–10 minutos. Describe la arquitectura final del
 repositorio: orquestación determinista donde no aporta valor llamar a un modelo,
-Codex para las tareas generativas, RAG local y barreras de calidad antes de
+routing barato en los perfiles HTTP, RAG trazable y barreras de calidad antes de
 persistir o distribuir un informe.
 
 ## Mensaje central
 
 > CENtinela convierte siete canales regulatorios chilenos en una cadena de
 > evidencia operable: captura, normaliza, prioriza, recupera, sintetiza, evalúa
-> y cita. El código controla el proceso; Codex se reserva para redactar,
-> evaluar y responder sobre evidencia cerrada; el especialista conserva la
-> decisión final.
+> y cita. El código controla el proceso; según el perfil, el proveedor planifica,
+> filtra, redacta, evalúa y responde sobre evidencia cerrada; el especialista
+> conserva la decisión final.
 
 Respuesta corta a “¿qué has construido?”:
 
 > Un MVP end-to-end de inteligencia regulatoria para el SEN: dashboard,
 > alertas, informe diario Planner-Executor, LLM-as-Judge, chat RAG, URLs
-> trazables y observabilidad de tokens. El perfil final usa una sesión
-> ChatGPT/Codex, embeddings locales y un runtime de permisos mínimo; no necesita
-> una API key.
+> trazables y observabilidad de tokens/costes. Puede operar con Codex, OpenAI API,
+> Ollama o vLLM, manteniendo las mismas barreras de evidencia.
 
 ## Seis ideas que deben quedar claras
 
-1. **Evidencia antes que generación.** Sol y Luna solo reciben fragmentos de un
+1. **Evidencia antes que generación.** Los modelos solo reciben fragmentos de un
    catálogo capturado y delimitado como datos no confiables.
-2. **Determinismo donde es suficiente.** El Planner y el filtro funcionan por
-   defecto sin llamada de modelo: las siete fuentes, el horizonte y las reglas
-   de prioridad ya están definidos.
-3. **Routing por responsabilidad.** Sol redacta el informe, Terra lo juzga y
-   Luna responde el RAG. Planner y filtro generativos solo existen como puntos
-   de extensión inyectables, no como coste base del flujo diario.
-4. **RAG local.** ChromaDB usa `local-hash-1536`, versionado y reproducible; no
-   envía documentos a un servicio de embeddings.
+2. **Determinismo donde es suficiente.** Codex evita dos procesos CLI para
+   Planner/filtro; los perfiles HTTP usan el modelo barato exigido y vuelven al
+   contrato determinista si falla.
+3. **Routing por responsabilidad.** Cada proveedor define modelos de Planner,
+   filtro/RAG, informe y Judge, con overrides independientes por rol.
+4. **RAG configurable.** ChromaDB usa `local-hash-1536` por defecto y admite
+   embeddings OpenAI-compatible sin mezclar espacios vectoriales.
 5. **Calidad con efecto operativo.** Un informe rechazado queda registrado como
    ejecución rechazada, pero no se guarda como informe, no alimenta la memoria
    diaria y no se distribuye.
-6. **Contabilidad honesta.** Se registran los tokens que publica Codex CLI. El
-   coste atribuible por llamada es N/A bajo suscripción; una imputación interna
-   opcional se muestra separada y nunca se presenta como tarifa del proveedor.
+6. **Contabilidad honesta.** Se registran tokens por backend. API, suscripción y
+   cómputo self-hosted se muestran separados; API cero no significa TCO cero.
 
 ## Guion hablado — objetivo: 9 minutos
 
@@ -82,18 +79,19 @@ usuario, informe diario y preguntas ad-hoc con fuentes originales.”
 los paquetes separan configuración, datos, captura, agente, RAG y
 observabilidad.
 
-LangGraph fija la topología Planner, Scraper, Executor, Evaluator y fin. Esa
-topología no implica cuatro llamadas de modelo. El Planner construye por defecto
-un plan determinista porque las siete fuentes y el horizonte están acotados. El
-Scraper reutiliza un snapshot fresco cuando existe, consulta solo las fuentes
-que faltan, normaliza, persiste e indexa. El filtro prioriza de forma
-determinista alertas, palabras clave y activos objetivo.
+LangGraph fija la topología Planner, Scraper, Executor, Evaluator y fin. En el
+perfil Codex, esa topología no implica cuatro procesos: el Planner materializa
+un contrato determinista porque las siete fuentes y el horizonte están acotados,
+y el filtro prioriza alertas, palabras clave y activos objetivo. En OpenAI,
+Ollama y vLLM ambos roles sí usan el modelo barato configurado, con validación de
+JSON y fallback determinista. El Scraper reutiliza un snapshot fresco cuando
+existe, consulta solo las fuentes que faltan, normaliza, persiste e indexa.
 
 Sol se reserva para el artefacto de mayor valor: la redacción ejecutiva. Terra
 evalúa relevancia, cobertura, claridad y trazabilidad, siempre combinada con la
 validación local de citas. Luna se usa en el chat RAG para responder sobre los
-fragmentos recuperados. El Planner y el filtro admiten componentes generativos
-inyectados para experimentación, pero el perfil estándar no los instancia.”
+fragmentos recuperados. En la ruta OpenAI, GPT-4o mini planifica y filtra y
+GPT-4o redacta, cumpliendo el routing solicitado sin acoplar el grafo.”
 
 ### 4:05–5:05 · Runtime Codex y permisos
 
@@ -297,25 +295,27 @@ Porque aporta estado tipado, nodos inspeccionables y topología testeable. La
 secuencia es fija, pero los estados de captura, redacción, evaluación, rechazo y
 persistencia tienen efectos distintos que deben auditarse.
 
-### 2. ¿Por qué el Planner no llama a un modelo?
+### 2. ¿Por qué el Planner de Codex no llama a un modelo?
 
 Porque no existe una decisión abierta que justifique el coste y la latencia: las
 siete fuentes, el horizonte inicial y los límites ya están definidos. El Planner
-materializa ese contrato de forma determinista. Se conserva una interfaz
-inyectable para experimentar sin convertirla en dependencia del flujo estándar.
+materializa ese contrato de forma determinista. OpenAI/Ollama/vLLM sí activan el
+modelo barato del rol; su JSON se valida y el mismo contrato actúa como fallback.
 
-### 3. ¿Cómo funciona el filtro sin Luna?
+### 3. ¿Cómo funciona el filtro del perfil Codex sin Luna?
 
 Normaliza términos, aplica alertas del usuario, palabras clave y taxonomía de
 activos, limita volumen y conserva evidencia cuando existe duda. Es reproducible
-y testeable. Un filtro generativo inyectado es opcional; Luna se reserva por
-defecto para el chat RAG.
+y testeable. En los perfiles HTTP se aplica después el filtro generativo del
+modelo barato; si falla, se conserva el conjunto seguro anterior. Luna se
+reserva por defecto para el chat RAG en Codex.
 
-### 4. ¿Por qué tres slugs si solo hay tres responsabilidades generativas?
+### 4. ¿Por qué tres tiers Codex si el grafo tiene cuatro nodos?
 
 Sol produce la síntesis de mayor valor, Terra evalúa con un rol distinto y Luna
-responde preguntas breves sobre contexto recuperado. El routing coincide con la
-responsabilidad real, no con cada nodo de LangGraph.
+responde preguntas breves sobre contexto recuperado. Planner/filtro son
+deterministas solo en este perfil; OpenAI y los backends abiertos sí asignan el
+modelo barato a ambos roles.
 
 ### 5. ¿Por qué Codex CLI en lugar de una API?
 
@@ -380,19 +380,20 @@ numéricos de compatibilidad no son una factura. La UI muestra N/A y, si negocio
 lo desea, calcula aparte una imputación interna basada en coste mensual y
 volumen esperado.
 
-### 15. ¿Qué ocurre sin Codex?
+### 15. ¿Qué ocurre si falla el proveedor?
 
-Se bloquean las capacidades generativas: informe y respuesta de chat. Siguen
+Se bloquean las capacidades generativas afectadas: informe, Judge o chat. Siguen
 operativos login, dashboard, scraping, alertas, persistencia e índice local. Un
-fallback interno no sustituye el requisito de autenticación.
+fallback interno no se presenta como respuesta generativa aprobada. El backend
+puede cambiarse por configuración entre Codex, OpenAI, Ollama y vLLM.
 
 ### 16. ¿Cumple el PDF oficial?
 
 Sí en alcance funcional: agente orquestado, fuentes chilenas, dashboard,
 alertas, RAG, citas, observabilidad y documentación. El PDF oficial es agnóstico
-respecto a un proveedor o familia GPT concreta. El perfil Codex-only responde a
-una decisión posterior del usuario y debe presentarse como una decisión de
-implementación, no como una exigencia textual del PDF.
+respecto a un proveedor o familia concreta. La ruta OpenAI conserva GPT-4o mini
+para planificación/filtrado y GPT-4o para redacción, mientras que la factoría
+demuestra portabilidad a Codex y modelos abiertos.
 
 ### 17. ¿Cuál es el mayor riesgo al escalar?
 
@@ -427,7 +428,8 @@ No decir:
 
 Sustituir por:
 
-- “Planner y filtro son deterministas por defecto”.
+- “En Codex, Planner y filtro son deterministas; en los perfiles HTTP se activa
+  el modelo barato con fallback”.
 - “Sol redacta, Terra evalúa y Luna responde RAG”.
 - “Perfil de permisos estricto, aislado y sin configuración heredada”.
 - “Coste atribuible N/A; imputación interna opcional y separada”.

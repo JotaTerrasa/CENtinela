@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Sequence
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 

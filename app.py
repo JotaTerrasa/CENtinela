@@ -18,7 +18,6 @@ from typing import Any, Iterable, Mapping, Sequence
 import pandas as pd
 import streamlit as st
 
-from agent.graph import ReportQualityError
 from agent.tools import source_identity
 from core.config import Settings, business_today, get_settings
 from core.database import Database, get_database
@@ -206,6 +205,163 @@ def _codex_unavailable_message(runtime: Mapping[str, Any], capability: str) -> s
         "índice local siguen disponibles; el fallback no sustituye el login y solo "
         "protege una ejecución generativa ya iniciada."
     )
+
+
+PROVIDER_LABELS = {
+    "codex": "Codex · ChatGPT",
+    "openai": "OpenAI API",
+    "ollama": "Ollama · self-hosted",
+    "vllm": "vLLM · self-hosted",
+}
+
+
+def _settings_secret(settings: Settings, name: str) -> str | None:
+    value = getattr(settings, name, None)
+    if value is None:
+        return None
+    reveal = getattr(value, "get_secret_value", None)
+    normalized = str(reveal() if callable(reveal) else value).strip()
+    return normalized or None
+
+
+def provider_runtime_status(
+    settings: Settings,
+    role: str = "executor",
+    *,
+    client_factory: Any | None = None,
+) -> dict[str, Any]:
+    """Comprueba el proveedor efectivo sin ejecutar una generación facturable."""
+
+    provider_resolver = getattr(settings, "provider_for_role", None)
+    provider = (
+        str(provider_resolver(role))
+        if callable(provider_resolver)
+        else str(getattr(settings, "ai_provider", "codex"))
+    )
+    model_resolver = getattr(settings, "model_for_role", None)
+    model = (
+        str(model_resolver(role))
+        if callable(model_resolver)
+        else str(getattr(settings, "report_model", ""))
+    )
+    if provider == "codex" and client_factory is None:
+        codex_status = codex_runtime_status(settings)
+        return {
+            **codex_status,
+            "ready": bool(codex_status.get("authenticated")),
+            "endpoint_reachable": None,
+            "provider": "codex",
+            "label": PROVIDER_LABELS["codex"],
+            "model": model,
+        }
+
+    if provider == "openai" and not _settings_secret(settings, "openai_api_key"):
+        return {
+            "available": False,
+            "authenticated": False,
+            "ready": False,
+            "endpoint_reachable": None,
+            "reason": "missing_api_key",
+            "provider": provider,
+            "label": PROVIDER_LABELS[provider],
+            "model": model,
+        }
+
+    if client_factory is None:
+        from core.providers import create_generation_client
+
+        client_factory = create_generation_client
+    effort_resolver = getattr(settings, "reasoning_effort_for_role", None)
+    effort = str(effort_resolver(role)) if callable(effort_resolver) else None
+    if provider == "openai" and model.startswith("gpt-4o"):
+        effort = None
+    try:
+        client = client_factory(
+            provider,
+            model=model,
+            reasoning_effort=effort,
+            timeout_seconds=(
+                float(getattr(settings, "codex_timeout_seconds", 240.0))
+                if provider == "codex"
+                else float(getattr(settings, "provider_timeout_seconds", 240.0))
+            ),
+            api_key=_settings_secret(settings, f"{provider}_api_key"),
+            base_url=(
+                None
+                if provider == "codex"
+                else str(getattr(settings, f"{provider}_base_url"))
+            ),
+            codex_executable=str(getattr(settings, "codex_cli_path", "codex")),
+            codex_workdir=getattr(settings, "codex_workdir", None),
+        )
+        health = client.health(
+            timeout_seconds=float(
+                getattr(settings, "provider_health_timeout_seconds", 5.0)
+            )
+        )
+        payload = health.to_dict() if hasattr(health, "to_dict") else dict(health)
+        ready = bool(payload.get("available")) and payload.get("authenticated") is not False
+        return {
+            **payload,
+            "available": ready,
+            "ready": ready,
+            "endpoint_reachable": bool(payload.get("reachable")),
+            "reason": "ready" if ready else "model_or_endpoint_unavailable",
+            "provider": provider,
+            "label": PROVIDER_LABELS.get(provider, provider),
+            "model": model,
+        }
+    except Exception as exc:
+        LOGGER.warning("Health check de proveedor fallido: %s", sanitize_error(exc))
+        return {
+            "available": False,
+            "authenticated": False,
+            "ready": False,
+            "endpoint_reachable": False,
+            "reason": "runtime_error",
+            "provider": provider,
+            "label": PROVIDER_LABELS.get(provider, provider),
+            "model": model,
+        }
+
+
+def _provider_unavailable_message(runtime: Mapping[str, Any], capability: str) -> str:
+    provider = str(runtime.get("provider") or "codex")
+    if provider == "codex":
+        return _codex_unavailable_message(runtime, capability)
+    if runtime.get("reason") == "missing_api_key":
+        return (
+            f"{capability} requiere `OPENAI_API_KEY`. La API se factura por separado "
+            "de la suscripción ChatGPT; inyéctala como secreto del despliegue."
+        )
+    model = str(runtime.get("model") or "configurado")
+    endpoint_hint = "el endpoint privado" if provider == "vllm" else "Ollama"
+    return (
+        f"{capability} está deshabilitado: {endpoint_hint} no está listo o no publica "
+        f"el modelo `{model}` en `/v1/models`."
+    )
+
+
+def provider_execution_metadata(settings: Settings, role: str) -> dict[str, Any]:
+    resolver = getattr(settings, "provider_for_role", None)
+    provider = str(resolver(role)) if callable(resolver) else str(settings.ai_provider)
+    if provider == "codex":
+        return {
+            "provider": "codex_cli",
+            "billing_mode": "subscription",
+            "cost_attribution": "not_attributable",
+        }
+    if provider == "openai":
+        return {
+            "provider": "openai_api",
+            "billing_mode": "api",
+            "cost_attribution": "token_pricing",
+        }
+    return {
+        "provider": provider,
+        "billing_mode": "self_hosted",
+        "cost_attribution": "external_compute",
+    }
 
 
 def report_quality_status(report: Mapping[str, Any]) -> dict[str, Any]:
@@ -686,19 +842,6 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
                 count, warnings = _refresh_sources(settings, database)
                 st.success(f"Actualización completada: {count} publicaciones normalizadas.")
                 st.session_state.last_scrape_warnings = warnings
-            except ReportQualityError:
-                # El borrador permanece únicamente en la traza de la ejecución;
-                # no se distribuye, descarga ni presenta como informe válido.
-                status.update(
-                    label="Informe rechazado por la barrera de calidad",
-                    state="error",
-                    expanded=True,
-                )
-                st.error(
-                    "El Judge rechazó el borrador. No se ha guardado ni se ha "
-                    "incorporado a la memoria diaria. Revisa Observabilidad antes "
-                    "de lanzar una nueva ejecución."
-                )
             except Exception as exc:
                 LOGGER.error(
                     "Actualizacion regulatoria fallida: %s", sanitize_error(exc)
@@ -1009,9 +1152,17 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
     st.caption(
         "Planner → Scraper → Executor → LLM-as-Judge. Cada afirmación material exige cita."
     )
-    runtime = codex_runtime_status(settings)
-    if not runtime["authenticated"]:
-        st.warning(_codex_unavailable_message(runtime, "El informe generativo"))
+    runtime = provider_runtime_status(settings, "executor")
+    judge_runtime = provider_runtime_status(settings, "evaluator")
+    report_ready = bool(runtime["ready"] and judge_runtime["ready"])
+    if not runtime["ready"]:
+        st.warning(_provider_unavailable_message(runtime, "El informe generativo"))
+    if not judge_runtime["ready"]:
+        st.warning(
+            _provider_unavailable_message(
+                judge_runtime, "La barrera LLM-as-Judge"
+            )
+        )
     alerts = database.list_alerts(int(user["id"]), enabled_only=True)
     keywords = flatten_alert_keywords(alerts)
     if keywords:
@@ -1022,14 +1173,24 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
     if st.button(
         "Preparar el informe regulatorio de hoy",
         type="primary",
-        disabled=not runtime["authenticated"],
+        disabled=not report_ready,
     ):
         with st.status("Orquestando el informe…", expanded=True) as status:
             try:
+                planning_mode = (
+                    "Planner/filtro deterministas"
+                    if settings.provider_for_role("planner") == "codex"
+                    and settings.provider_for_role("filter") == "codex"
+                    else (
+                        f"Planner {settings.model_for_role('planner')} · "
+                        f"filtro {settings.model_for_role('filter')}"
+                    )
+                )
                 st.write(
-                    "Planner y filtro deterministas · "
-                    f"Judge {settings.judge_model} (Terra) · "
-                    f"reporte {settings.report_model} (Sol)."
+                    f"{planning_mode} · "
+                    f"Judge {settings.model_for_role('evaluator')} · "
+                    f"reporte {settings.model_for_role('executor')} · "
+                    f"proveedor {runtime['label']}."
                 )
                 result = _run_daily_report(user, database)
                 st.session_state.latest_report = result
@@ -1163,19 +1324,17 @@ def _ask_rag_observed(
         user_id=int(user["id"]),
         metadata={
             "interface": "streamlit",
-            "provider": "codex_cli",
-            "billing_mode": "subscription",
-            "cost_attribution": "not_attributable",
+            **provider_execution_metadata(settings, "filter"),
         },
     )
     step_id = database.start_step(
-        execution_id, "rag_answer", model=settings.filter_model
+        execution_id, "rag_answer", model=settings.model_for_role("filter")
     )
     callback = CostTrackingCallback(
         database=database,
         execution_id=execution_id,
         step_id=step_id,
-        model=settings.filter_model,
+        model=settings.model_for_role("filter"),
         settings=settings,
         auto_start_execution=False,
     )
@@ -1212,12 +1371,12 @@ def render_chat(
 ) -> None:
     st.title("Chat RAG")
     st.caption(
-        "Recuperación local en ChromaDB y redacción con Codex; la respuesta conserva "
-        "fuentes y URLs."
+        "Recuperación trazable en ChromaDB y redacción multiproveedor; la respuesta "
+        "conserva fuentes y URLs."
     )
-    runtime = codex_runtime_status(settings)
-    if not runtime["authenticated"]:
-        st.warning(_codex_unavailable_message(runtime, "El chat generativo"))
+    runtime = provider_runtime_status(settings, "filter")
+    if not runtime["ready"]:
+        st.warning(_provider_unavailable_message(runtime, "El chat generativo"))
     news_count = len(database.list_news(limit=5000))
     if not news_count:
         st.info("Actualiza primero las fuentes desde el Dashboard.")
@@ -1240,7 +1399,7 @@ def render_chat(
                     _render_sources(message["sources"])
     prompt = st.chat_input(
         "Pregunta sobre regulación eléctrica chilena",
-        disabled=not runtime["authenticated"],
+        disabled=not runtime["ready"],
     )
     if prompt:
         messages.append({"role": "user", "content": prompt})
@@ -1301,8 +1460,16 @@ def _billing_mode(record: Mapping[str, Any]) -> str:
         "codex-subscription/"
     ):
         return "subscription"
+    if (
+        configured in {"self_hosted", "self-hosted", "compute"}
+        or provider in {"ollama", "vllm"}
+        or model.startswith("self-hosted/")
+    ):
+        return "self_hosted"
     if configured in {"api", "payg", "usage"}:
-        return "legacy_api"
+        return "api"
+    if provider in {"openai", "openai_api"}:
+        return "api"
     if model or float(record.get("cost_usd") or 0) > 0:
         return "legacy_api"
     return "none"
@@ -1310,20 +1477,24 @@ def _billing_mode(record: Mapping[str, Any]) -> str:
 
 def _billing_label(modes: set[str]) -> str:
     has_codex = "subscription" in modes
-    has_legacy = "legacy_api" in modes
-    if has_codex and has_legacy:
-        return "Mixta · Codex + API legado"
+    has_api = bool({"api", "legacy_api"} & modes)
+    has_self_hosted = "self_hosted" in modes
+    if sum((has_codex, has_api, has_self_hosted)) > 1:
+        return "Mixta · por llamada"
     if has_codex:
         return "Codex · suscripción"
-    if has_legacy:
-        return "API legado · atribuible"
+    if has_api:
+        return "API · atribuible"
+    if has_self_hosted:
+        return "Self-hosted · cómputo"
     return "Sin llamada generativa"
 
 
 def render_observability(database: Database, user: Mapping[str, Any]) -> None:
     st.title("Observabilidad y tokenomics")
     st.caption(
-        "Tokens exactos reportados por Codex CLI, agregados por llamada, nodo y ejecución."
+        "Tokens reportados por cada backend, coste API exacto y estimación de cómputo "
+        "self-hosted separados por llamada, nodo y ejecución."
     )
     all_executions = database.list_executions(limit=200)
     is_admin = bool(user.get("is_admin"))
@@ -1337,8 +1508,11 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
     execution_views: list[dict[str, Any]] = []
     codex_calls = 0
     codex_reports = 0
-    legacy_cost_usd = 0.0
-    legacy_cost_clp = 0.0
+    api_cost_usd = 0.0
+    api_cost_clp = 0.0
+    api_call_count = 0
+    self_hosted_calls = 0
+    compute_estimate_usd = 0.0
     for item in executions:
         detail = database.get_execution(str(item["id"])) or dict(item)
         calls = list(detail.get("llm_calls") or [])
@@ -1351,22 +1525,33 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
         subscription_calls = [
             call for call in calls if _billing_mode(call) == "subscription"
         ]
-        legacy_calls = [call for call in calls if _billing_mode(call) == "legacy_api"]
+        api_calls = [
+            call for call in calls if _billing_mode(call) in {"api", "legacy_api"}
+        ]
+        hosted_calls = [call for call in calls if _billing_mode(call) == "self_hosted"]
         codex_calls += len(subscription_calls)
+        api_call_count += len(api_calls)
+        self_hosted_calls += len(hosted_calls)
         codex_reports += int(
             item.get("workflow") == "daily_report" and "subscription" in modes
         )
-        if legacy_calls:
-            item_legacy_usd = sum(float(call.get("cost_usd") or 0) for call in legacy_calls)
-            item_legacy_clp = sum(float(call.get("cost_clp") or 0) for call in legacy_calls)
-        elif "legacy_api" in modes:
-            item_legacy_usd = float(item.get("cost_usd") or 0)
-            item_legacy_clp = float(item.get("cost_clp") or 0)
+        if api_calls:
+            item_api_usd = sum(float(call.get("cost_usd") or 0) for call in api_calls)
+            item_api_clp = sum(float(call.get("cost_clp") or 0) for call in api_calls)
+        elif {"api", "legacy_api"} & modes:
+            item_api_usd = float(item.get("cost_usd") or 0)
+            item_api_clp = float(item.get("cost_clp") or 0)
         else:
-            item_legacy_usd = 0.0
-            item_legacy_clp = 0.0
-        legacy_cost_usd += item_legacy_usd
-        legacy_cost_clp += item_legacy_clp
+            item_api_usd = 0.0
+            item_api_clp = 0.0
+        item_compute_usd = sum(
+            float((call.get("metadata") or {}).get("estimated_compute_cost_usd") or 0)
+            for call in hosted_calls
+            if isinstance(call.get("metadata"), Mapping)
+        )
+        api_cost_usd += item_api_usd
+        api_cost_clp += item_api_clp
+        compute_estimate_usd += item_compute_usd
         execution_views.append(
             {
                 "execution": item,
@@ -1374,26 +1559,34 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
                 "modes": modes,
                 "billing": _billing_label(modes),
                 "display_status": _execution_display_status(item),
-                "legacy_usd": item_legacy_usd,
-                "legacy_clp": item_legacy_clp,
+                "api_usd": item_api_usd,
+                "api_clp": item_api_clp,
+                "compute_usd": item_compute_usd,
             }
         )
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tokens de entrada", f"{prompt_tokens:,}")
     c2.metric("Tokens de salida", f"{completion_tokens:,}")
-    c3.metric("Llamadas Codex", f"{codex_calls:,}")
-    c4.metric("Coste Codex atribuible", "N/A")
-    st.info(
-        "Codex usa la cuota de la suscripción: el coste USD/CLP por llamada no es "
-        "atribuible (N/A). N/A no significa gratis ni coste total cero."
+    c3.metric(
+        "Llamadas generativas",
+        f"{codex_calls + api_call_count + self_hosted_calls:,}",
     )
-    if legacy_cost_usd or legacy_cost_clp:
-        st.warning(
-            "Histórico API legado, separado de Codex: "
-            f"US${legacy_cost_usd:,.6f} · CLP ${legacy_cost_clp:,.2f}."
+    c4.metric("Coste API atribuible", f"US${api_cost_usd:,.6f}")
+    st.caption(f"Conversión contractual: CLP ${api_cost_clp:,.2f} · 1 USD = 940 CLP.")
+    if codex_calls:
+        st.info(
+            "Codex usa cuota de suscripción: su coste por llamada es N/A, no cero. "
+            "La imputación opcional se mantiene separada."
         )
-    else:
-        st.caption("No hay costes API legados en las ejecuciones visibles.")
+    if self_hosted_calls:
+        compute_text = (
+            f"Estimación configurada: US${compute_estimate_usd:,.6f}."
+            if compute_estimate_usd
+            else "Coste de infraestructura aún no configurado."
+        )
+        st.info(
+            f"{self_hosted_calls} llamadas self-hosted: coste API 0; {compute_text}"
+        )
 
     with st.expander("Imputación interna opcional de la suscripción"):
         st.caption(
@@ -1454,10 +1647,17 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
                 "Completion": item.get("completion_tokens"),
                 "Facturación": view["billing"],
                 "USD API atribuible": (
-                    view["legacy_usd"] if "legacy_api" in view["modes"] else None
+                    view["api_usd"]
+                    if {"api", "legacy_api"} & view["modes"]
+                    else None
                 ),
                 "CLP API atribuible": (
-                    view["legacy_clp"] if "legacy_api" in view["modes"] else None
+                    view["api_clp"]
+                    if {"api", "legacy_api"} & view["modes"]
+                    else None
+                ),
+                "USD cómputo estimado": (
+                    view["compute_usd"] if "self_hosted" in view["modes"] else None
                 ),
                 "Coste Codex": (
                     "N/A · incluido en suscripción"
@@ -1501,12 +1701,20 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
                         "Completion": call.get("completion_tokens"),
                         "USD API atribuible": (
                             call.get("cost_usd")
-                            if _billing_mode(call) == "legacy_api"
+                            if _billing_mode(call) in {"api", "legacy_api"}
                             else None
                         ),
                         "CLP API atribuible": (
                             call.get("cost_clp")
-                            if _billing_mode(call) == "legacy_api"
+                            if _billing_mode(call) in {"api", "legacy_api"}
+                            else None
+                        ),
+                        "USD cómputo estimado": (
+                            (call.get("metadata") or {}).get(
+                                "estimated_compute_cost_usd"
+                            )
+                            if _billing_mode(call) == "self_hosted"
+                            and isinstance(call.get("metadata"), Mapping)
                             else None
                         ),
                         "Coste Codex": (
@@ -1531,19 +1739,19 @@ def render_architecture(settings: Settings) -> None:
         """
 ```mermaid
 flowchart LR
-    U[Usuario o scheduler] --> A[Planner · determinista]
-    S[Sesión ChatGPT] --> X[Codex CLI]
+    U[Usuario o scheduler] --> A[Planner · routing barato / fallback]
+    P[Provider Factory] --> X[Codex / OpenAI / Ollama / vLLM]
     A --> B[Scraper · fuentes oficiales]
-    B --> C[Executor · Sol]
-    C --> D[Judge · Terra]
+    B --> C[Executor · modelo por rol]
+    C --> D[Judge · modelo por rol]
     D --> E[END]
-    B --> V[(ChromaDB · local-hash)]
-    V --> R[Chat RAG · Codex Luna]
+    B --> V[(ChromaDB · embeddings configurables)]
+    V --> R[Chat RAG]
     B --> Q[(SQLite)]
     X --> C
     X --> D
     X --> R
-    C --> O[Tokens exactos · coste N/A]
+    C --> O[Tokens · coste API · cómputo separado]
     D --> O
     R --> O
 ```
@@ -1553,11 +1761,39 @@ flowchart LR
     st.dataframe(
         pd.DataFrame(
             [
-                {"Rol": "Planner", "Modelo": "Determinista · sin llamada LLM"},
-                {"Rol": "Filtro", "Modelo": "Determinista · sin llamada LLM"},
-                {"Rol": "Reporte final", "Modelo": settings.report_model},
-                {"Rol": "LLM-as-Judge", "Modelo": settings.judge_model},
-                {"Rol": "Embeddings", "Modelo": settings.embedding_model},
+                {
+                    "Rol": "Planner",
+                    "Proveedor": settings.provider_for_role("planner"),
+                    "Modelo": (
+                        "Determinista · perfil Codex"
+                        if settings.provider_for_role("planner") == "codex"
+                        else settings.model_for_role("planner")
+                    ),
+                },
+                {
+                    "Rol": "Filtro",
+                    "Proveedor": settings.provider_for_role("filter"),
+                    "Modelo": (
+                        "Determinista · perfil Codex"
+                        if settings.provider_for_role("filter") == "codex"
+                        else settings.model_for_role("filter")
+                    ),
+                },
+                {
+                    "Rol": "Reporte final",
+                    "Proveedor": settings.provider_for_role("executor"),
+                    "Modelo": settings.model_for_role("executor"),
+                },
+                {
+                    "Rol": "LLM-as-Judge",
+                    "Proveedor": settings.provider_for_role("evaluator"),
+                    "Modelo": settings.model_for_role("evaluator"),
+                },
+                {
+                    "Rol": "Embeddings",
+                    "Proveedor": settings.embedding_provider,
+                    "Modelo": settings.embedding_model_for_provider(),
+                },
             ]
         ),
         hide_index=True,
@@ -1570,8 +1806,9 @@ flowchart LR
 - Solo se aceptan citas con URL presente en el catálogo de la ejecución.
 - Una cita demuestra procedencia; la interpretación requiere revisión regulatoria.
 - Los fallos por fuente son visibles y no se sustituyen por noticias inventadas.
-- Prompts, contraseñas y credenciales de Codex no se guardan en las trazas.
-- El frontend solo consulta `codex login status`; nunca lee archivos de autenticación.
+- Prompts, contraseñas y credenciales de proveedores no se guardan en las trazas.
+- Los health checks consultan `codex login status` o `/v1/models`; nunca exponen secretos.
+- OpenAI API, suscripción Codex y cómputo self-hosted se contabilizan por separado.
 """
     )
 
@@ -1614,23 +1851,23 @@ def main() -> None:
         render_auth(database)
         return
     user = st.session_state.user
-    runtime = codex_runtime_status(settings)
+    runtime = provider_runtime_status(settings, "executor")
     with st.sidebar:
         st.markdown("## CEN<span style='color:#24a660'>tinela</span>", unsafe_allow_html=True)
         st.caption("SEN · Chile")
         st.divider()
         st.markdown(f"**{user['username']}**")
         st.caption("Administrador" if user.get("is_admin") else "Analista")
-        if runtime["authenticated"]:
-            st.success("Codex conectado · ChatGPT", icon="✅")
-        elif runtime["reason"] == "api_key_auth_not_allowed":
+        if runtime["ready"]:
+            st.success(f"{runtime['label']} · listo", icon="✅")
+        elif runtime["provider"] == "codex" and runtime["reason"] == "api_key_auth_not_allowed":
             st.error("Codex con API key · sesión rechazada", icon="⛔")
-        elif runtime["reason"] == "unsupported_auth_mode":
+        elif runtime["provider"] == "codex" and runtime["reason"] == "unsupported_auth_mode":
             st.error("Codex · identidad no confirmada", icon="⛔")
-        elif runtime["available"]:
+        elif runtime["provider"] == "codex" and runtime["available"]:
             st.warning("Codex instalado · falta sesión", icon="⚠️")
         else:
-            st.error("Runtime Codex no disponible", icon="⛔")
+            st.error(f"{runtime['label']} · no disponible", icon="⛔")
         page = st.radio(
             "Navegación",
             [

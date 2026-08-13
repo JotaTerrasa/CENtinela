@@ -241,6 +241,7 @@ def test_langchain_config_callback_receives_exact_usage_with_subscription_cost(
         "requested_model": "gpt-5.6-luna",
         "pricing_status": "not_applicable",
         "cost_status": "included_not_attributable",
+        "token_usage_status": "reported",
     }
 
 

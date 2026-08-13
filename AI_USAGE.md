@@ -15,25 +15,26 @@ fuentes públicas.
 
 ## IA utilizada dentro del producto
 
-CENtinela utiliza Codex CLI autenticado mediante ChatGPT como único runtime
-generativo:
+CENtinela admite cuatro runtimes generativos con un contrato común:
 
-- planificación y filtrado deterministas por defecto, sin consumir una llamada
-  generativa para decisiones repetitivas;
-- Luna para las consultas RAG;
-- Sol para la síntesis del informe ejecutivo;
-- Terra para la evaluación LLM-as-Judge.
+- planificación y filtrado deterministas en el perfil Codex; los perfiles HTTP
+  usan su modelo barato por rol y conservan ese contrato como fallback;
+- Codex con Luna/Sol/Terra mediante una sesión ChatGPT;
+- OpenAI API con GPT-4o mini y GPT-4o;
+- Ollama para ejecución local de modelos abiertos;
+- vLLM o un gateway OpenAI-compatible para inferencia privada en cloud.
 
-La recuperación vectorial previa a la generación emplea embeddings hash locales
-y ChromaDB. Las URLs no las genera el modelo: proceden del catálogo capturado y
-se validan localmente antes de aceptar una respuesta o un informe.
+La recuperación vectorial emplea ChromaDB y embeddings hash locales por defecto,
+con adaptadores opcionales de OpenAI, Ollama y vLLM. Las URLs no las genera el
+modelo: proceden del catálogo capturado y se validan localmente antes de aceptar
+una respuesta o un informe.
 
 ## Datos y privacidad
 
 El desarrollo y las pruebas utilizan únicamente código del proyecto y contenido
 regulatorio público de organismos chilenos. No se utilizaron datos internos de
-Grenergy. Las credenciales de ChatGPT/Codex se mantienen fuera del repositorio,
-del ZIP y de las trazas de aplicación.
+Grenergy. Las credenciales de ChatGPT/Codex y las claves de proveedores se
+mantienen fuera del repositorio, del ZIP y de las trazas de aplicación.
 
 ## Controles de calidad aplicados
 

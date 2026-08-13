@@ -1,474 +1,345 @@
 # Decisiones técnicas de CENtinela
 
-## Resumen ejecutivo
+## Resumen para CTO
 
-CENtinela es un monolito modular preparado para demostrar de extremo a extremo
-un proceso de inteligencia regulatoria: captura, normalización, persistencia,
-recuperación, síntesis, evaluación y trazabilidad. Streamlit, SQLite y ChromaDB
-reducen la infraestructura del MVP; los contratos Python permiten separar UI,
-workers y almacenamiento cuando aparezca una necesidad real de escala.
+CENtinela es un MVP ejecutable de inteligencia regulatoria con cuatro garantías
+centrales: evidencia oficial trazable, flujo agéntico explícito, fallo seguro de
+la evaluación y observabilidad económica por llamada. La arquitectura separa el
+dominio regulatorio del proveedor de inferencia y permite ejecutar la misma
+aplicación con Codex, OpenAI API, Ollama o vLLM.
 
-La versión actual adopta una decisión deliberada: **todo el razonamiento
-generativo pasa por Codex CLI autenticado con ChatGPT**. No existe una segunda
-ruta por API key. Los embeddings también son locales. Esta elección facilita
-una réplica privada con la cuenta Codex del operador y elimina secretos de API
-del repositorio, pero desplaza el control económico desde precios unitarios de
-API hacia cuota, disponibilidad y políticas del plan ChatGPT/Codex.
+La solución demuestra el recorrido funcional completo solicitado. No se declara
+lista para alta disponibilidad: SQLite, Chroma embebido, autenticación local y
+ejecución síncrona son elecciones deliberadas del MVP. El paso a producción
+exige identidad corporativa, persistencia gestionada, trabajos asíncronos,
+secret manager, evaluación dorada y operación formal del proveedor/modelo.
 
-La separación conceptual permanece intacta:
+## Principios
 
-- los scrapers producen evidencia con URL;
-- el RAG recupera fragmentos sin enviar textos a un servicio de embeddings;
-- LangGraph controla los pasos deterministas y qué modelo Codex cumple cada rol
-  generativo;
-- los validadores locales verifican citas;
-- la observabilidad conserva el uso que reporta el CLI sin inventar costes.
+1. Una afirmación regulatoria sin evidencia verificable no se publica.
+2. El contenido externo es dato no confiable, nunca una instrucción.
+3. El Judge no sustituye la validación determinista ni la revisión humana.
+4. Cambiar de proveedor no cambia la topología, las citas ni el contrato de
+   observabilidad.
+5. Coste API, suscripción y cómputo propio son magnitudes distintas.
+6. Los fallos y modos degradados deben ser visibles, no maquillados.
 
-## Objetivos de arquitectura
+## ADR-001: LangGraph como orquestador
 
-1. Producir información contrastable antes que texto persuasivo.
-2. Conservar operativo el corpus, las alertas y el dashboard ante fallos de
-   Codex o de una fuente.
-3. Registrar tokens, latencia, estado, modelo y modo de facturación por llamada.
-4. No presentar como coste real una cifra que la autenticación por suscripción
-   no permite atribuir por turno.
-5. Limitar herramientas, contexto, permisos y superficie de prompt injection.
-6. Permitir evolución a producción sin reescribir contratos de evidencia.
+**Estado:** aceptada.
 
-No es objetivo del MVP sustituir criterio jurídico, emitir decisiones de
-inversión, garantizar exhaustividad frente a portales sin SLA ni ofrecer una
-frontera de seguridad multi-tenant.
-
-## ADR-001: LangGraph para Planner-Executor
-
-**Decisión.** Implementar un `StateGraph` tipado con topología fija:
+**Decisión.** Implementar una máquina de estados compilada con la topología:
 
 ```text
-START -> planner -> scraper -> executor -> evaluator -> END
+START -> Planner -> Scraper -> Executor -> Evaluator -> END
 ```
 
-**Razón.** El proceso tiene estado compartido, cuatro responsabilidades y una
-obligación de auditoría por paso. LangGraph hace explícitas y testeables las
-transiciones. Frente a una cadena informal reduce estado implícito; frente a un
-ReAct abierto evita bucles, herramientas arbitrarias, latencia y consumo no
-acotado.
-
-**Responsabilidades.**
-
-- **Planner:** determina de forma local horizonte, términos y prioridad; no
-  visita URLs, redacta ni consume una llamada generativa por defecto.
-- **Scraper:** consulta el registro cerrado de organismos, normaliza, deduplica,
-  persiste, indexa y filtra relevancia.
-- **Executor:** redacta el informe únicamente sobre la evidencia capturada y el
-  informe anterior acotado.
-- **Evaluator:** combina barreras locales con LLM-as-Judge.
-
-**Consecuencia.** El flujo termina después del Judge, incluso si rechaza el
-informe. Un rechazo conserva borrador, diagnóstico y métricas dentro de la
-ejecución para auditoría, pero no crea un informe distribuible, artefactos ni
-memoria diaria. Una nueva ejecución es una decisión del usuario. En producción
-se permitiría como máximo una revisión condicional, con presupuesto y motivo
-auditados.
-
-## ADR-002: Codex CLI como único runtime generativo
-
-**Decisión.** Encapsular `codex exec` en `core/codex_client.py` y delegar la
-autenticación a una sesión ChatGPT/Codex ya establecida. No leer credenciales
-desde Python ni aceptar `OPENAI_API_KEY`.
-
-El cliente:
-
-- pasa el prompt por `stdin`, nunca como argumento del proceso;
-- usa `--json` y procesa eventos JSONL;
-- solicita `--ephemeral` para no persistir rollouts;
-- selecciona por configuración inline el perfil mínimo `centinela_runtime` y
-  valida su esquema con `--strict-config`, sin mezclarlo con `--sandbox`;
-- ignora configuración y reglas personales para mantener el perfil del
-  repositorio;
-- usa un directorio de trabajo aislado;
-- aplica timeout y errores sanitizados;
-- admite JSON Schema para salidas estructuradas;
-- expone una interfaz `invoke` compatible con los consumidores existentes.
-
-El uso de `codex exec` para automatización está documentado en
-[Non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode). La
-sesión guardada se reutiliza por defecto.
-
-**Ventajas.**
-
-- una sola identidad de IA y un solo mecanismo de autenticación;
-- no hay API keys en `.env`, SQLite, logs ni imagen Docker;
-- se heredan permisos y límites del workspace ChatGPT;
-- el CLI entrega texto, JSON estructurado y telemetría de uso en un contrato
-  uniforme.
-
-**Trade-offs.**
-
-- iniciar un proceso por turno añade latencia frente a un cliente HTTP
-  persistente;
-- disponibilidad, modelos y límites dependen del plan/workspace autenticado;
-- una sesión personal no es una credencial de servicio ni una solución de
-  multi-tenancy;
-- el modo suscripción no proporciona un coste API unitario atribuible por
-  llamada;
-- el despliegue horizontal exige una estrategia empresarial de identidad,
-  rotación y aislamiento, no compartir indiscriminadamente un volumen personal.
-
-## ADR-003: routing Codex por valor y complejidad
-
-**Decisión.** Configurar cada rol de manera explícita:
-
-| Función | Modelo | Esfuerzo | Justificación |
-|---|---|---:|---|
-| Planificación | determinista | — | Reglas locales, sin llamada por defecto |
-| Filtrado | determinista | — | Clasificación local del catálogo |
-| Chat RAG | `gpt-5.6-luna` | `low` | Respuesta breve sobre evidencia recuperada |
-| Redacción final | `gpt-5.6-sol` | `high` | Síntesis ejecutiva y seguimiento de citas |
-| Judge | `gpt-5.6-terra` | `medium` | Rúbrica estructurada y crítica independiente |
-
-Luna responde el RAG, Sol se reserva para el informe y Terra separa la
-evaluación del redactor. Planner y filtro son deterministas para ahorrar cuota y
-hacer reproducible la selección. Modelo y esfuerzo se pasan al CLI en cada
-invocación generativa, por lo que no dependen de preferencias personales.
-
-La reducción de consumo se apoya en deduplicación previa, límites por fuente,
-catálogos truncados, una única redacción, `top_k` pequeño y ausencia de ciclos
-automáticos. Scraping, alertas, hashing, validación de citas y ranking lexical
-de contingencia son deterministas.
-
-Los slugs configurados deben estar habilitados para la cuenta. Un cambio de
-modelo requiere evaluación de calidad, disponibilidad y telemetría; no basta
-con sustituir una cadena.
-
-## ADR-004: embeddings locales versionados con ChromaDB
-
-**Decisión.** Mantener `chromadb.PersistentClient`, pero sustituir embeddings
-remotos por `local-hash-1536`. El runtime fija ChromaDB 0.6.3: conserva la API
-embebida necesaria y queda fuera del intervalo vulnerable `>=1.0.0,<=1.5.9`
-publicado para CVE-2026-45829. No se inicia ni publica el servidor HTTP de
-Chroma; el único acceso es local desde el proceso no privilegiado.
-`PersistentClient` desactiva explícitamente la telemetría de producto y se fija
-`posthog==5.4.0`, última rama compatible con la llamada positional de Chroma
-0.6.3. Un volumen creado por Chroma 1.5.9 no es compatible hacia atrás: antes de
-aplicar el downgrade se conserva una copia o volumen anterior y se crea un
-índice limpio desde SQLite/fuentes. No se modifica en sitio un índice 1.x.
-
-El algoritmo normaliza Unicode y combina palabras, bigramas y trigramas de
-caracteres. Cada feature se proyecta mediante BLAKE2b con signo a un vector de
-1.536 dimensiones y se normaliza L2. La salida es determinista entre procesos,
-no descarga modelos y no realiza llamadas externas.
-
-Los metadatos conservan `source`, `url`, `source_url`, título, fecha, temas,
-hash documental, índice de fragmento y versión del embedding. Una consulta
-vectorial filtra por esa versión. Si un documento procede de un espacio antiguo,
-se reindexa antes de considerarlo equivalente; así no se mezclan distancias
-incompatibles.
-
-La recuperación combina distancia vectorial y señal léxica, elimina fragmentos
-duplicados por URL y reserva diversidad para los organismos mencionados de
-forma explícita en la pregunta. Luna no redacta URLs libres: devuelve
-afirmaciones estructuradas con `source_ids` de un catálogo cerrado y la
-aplicación materializa localmente cada cita `[Fuente | URL]`. Este contrato
-reduce tanto resultados repetidos como enlaces inventados.
-
-**Ventajas.**
-
-- cero secretos, descargas y coste remoto de embeddings;
-- despliegue reproducible y rápido para un corpus regulatorio pequeño;
-- buen comportamiento con acrónimos y vocabulario específico como BESS, PMGD,
-  transmisión o precios de nudo;
-- persistencia y trazabilidad de URL intactas.
-
-**Límite.** Es hashing lexical enriquecido, no comprensión semántica neuronal.
-Paráfrasis sin solapamiento pueden perder recall. Se conserva búsqueda lexical
-de contingencia y la evolución debe decidirse con un conjunto dorado, no por
-preferencia tecnológica. A escala, pgvector o un servicio administrado aporta
-alta disponibilidad y aislamiento, pero no resuelve por sí mismo la calidad del
-embedding.
-
-## ADR-005: uso exacto y coste no atribuible
-
-**Decisión.** Adaptar los callbacks existentes a los eventos de Codex. El
-cliente lee `turn.completed.usage` y normaliza:
-
-- `input_tokens` como `prompt_tokens`;
-- `output_tokens` como `completion_tokens`;
-- `cached_input_tokens`;
-- `reasoning_output_tokens`;
-- modelo, estado y latencia.
-
-No se calculan tokens desde caracteres ni se completan huecos con estimaciones.
-Si una versión del CLI no publica `usage`, el `CodexResult` lo representa como
-no disponible; operativamente, un cero en el esquema debe revisarse y no
-interpretarse como ausencia de consumo.
-
-Para mantener compatibilidad con SQLite y el panel, se conservan `cost_usd` y
-`cost_clp`. En autenticación ChatGPT/Codex ambos valen `0`, acompañados por:
-
-```json
-{
-  "billing_mode": "subscription",
-  "cost_attribution": "not_attributable",
-  "attributable_cost_usd": 0.0
-}
-```
-
-Esto significa que no existe un precio de API atribuible a esa llamada. No
-significa que Codex sea gratuito: existe una suscripción o contrato, límites de
-uso y coste operativo. `USD_TO_CLP=940` se mantiene por compatibilidad con el
-contrato de datos del ejercicio, pero no debe utilizarse para inferir el coste
-total de propiedad.
-
-**Métrica económica correcta para este perfil.** Tokens por informe, latencia,
-errores por límites, utilización de cuota y coste de suscripción asignado por
-centro de coste. Una imputación por turno requeriría una política interna
-explícita. El panel permite esa imputación interna opcional en USD/CLP, claramente
-etiquetada; no debe presentarse como tarifa del proveedor.
-
-## ADR-006: autenticación ChatGPT/Codex en Docker
-
-**Decisión.** Instalar Codex CLI en la imagen y persistir `CODEX_HOME` en el
-volumen dedicado `centinela-codex-auth`, montado en
-`/home/centinela/.codex`. El operador completa:
-
-```bash
-docker compose exec centinela codex login --device-auth
-```
-
-El device flow es apropiado para un contenedor sin navegador. La
-[documentación de autenticación](https://learn.chatgpt.com/docs/auth) exige
-habilitar Device Code Login en la cuenta o workspace y tratar `auth.json` como
-una contraseña.
+**Motivación.** El problema no es una única conversación, sino un workflow con
+estado, efectos laterales, rutas de fallo y una barrera de calidad. LangGraph
+hace explícitos los nodos y las transiciones, permite inyectar clientes en tests
+y deja un punto natural de evolución a checkpoints y workers.
 
 **Controles.**
 
-- el volumen no se copia en la imagen ni se versiona;
-- solo se monta en el servicio `centinela` y en la ruta del usuario no
-  privilegiado;
-- la imagen crea datos, Chroma, workdir e informes para el UID 10001;
-- debe permanecer escribible para renovación de tokens;
-- cada generación fuerza `forced_login_method="chatgpt"` y falla si las
-  credenciales activas pertenecen a otro método;
-- el perfil inline `centinela_runtime` concede solo `:minimal` y lectura del
-  workdir; deniega `/app`, la raíz del proyecto y `CODEX_HOME`;
-- los comandos del modelo heredan un entorno vacío salvo un `PATH` mínimo, no
-  tienen red ni escritura y no pueden solicitar elevación interactiva;
-- `docker compose down` lo conserva;
-- acceso al daemon Docker implica acceso potencial al volumen y debe limitarse;
-- logout, revocación de la cuenta y borrado controlado del volumen forman parte
-  de la baja operativa.
+- No existen aristas ocultas ni bucles abiertos.
+- En Codex, Planner y filtro son deterministas para evitar procesos CLI sobre
+  decisiones fijas. OpenAI/Ollama/vLLM ejecutan esos roles con su modelo barato
+  y conservan el mismo resultado determinista como fallback validado.
+- Executor puede efectuar una única revisión si falla la barrera de citas.
+- Evaluator puede sustituir un borrador rechazado por una versión extractiva y
+  evaluarla una única vez.
+- Un Judge fallido o no aprobatorio impide guardar el informe como completado.
 
-**No decidido para producción.** Un volumen con sesión personal no es un vault.
-Una implantación corporativa debe evaluar access tokens empresariales para
-automatización confiable, identidad dedicada, rotación, revocación, auditoría y
-políticas de workspace. No debe exponerse este patrón en un servicio público ni
-compartirse entre tenants.
+**Alternativas descartadas.** Una cadena lineal simple reduce dependencias, pero
+oculta mejor los estados intermedios y dificulta reintentos e instrumentación.
+Un agente autónomo abierto añade flexibilidad a costa de control y
+reproducibilidad, inadecuado para inteligencia regulatoria.
 
-## ADR-007: scraping resiliente de fuentes oficiales
+## ADR-002: contrato multiproveedor
 
-**Decisión.** Mantener un registro cerrado de organismos y adaptadores. Cada
-petición aplica timeout, reintentos acotados, User-Agent, normalización y
-aislamiento de errores. La URL canónica es identidad de deduplicación y evidencia.
+**Estado:** aceptada; sustituye la decisión inicial Codex-only.
 
-Ante cambios o bloqueos se prueban feeds y sitemaps oficiales. Como último
-recurso del MVP, `r.jina.ai` lee la misma URL pública; el registro etiqueta el
-fallback y conserva la URL oficial como fuente. Si también falla, la ejecución
-continúa con los demás organismos y expone el error. Nunca se inyectan noticias
-sintéticas.
+**Decisión.** Los consumidores dependen de un contrato estructural común:
 
-BeautifulSoup y feeds ofrecen transparencia suficiente para el MVP. Playwright
-solo se justifica para una fuente que requiera JavaScript, porque incrementa
-imagen, latencia y mantenimiento. Producción requiere revisión de términos,
-`robots.txt`, frecuencia, caché HTTP, backoff y límites por host.
+```python
+invoke(prompt, config=None, output_schema=None, model=None,
+       reasoning_effort=None, timeout_seconds=None)
+invoke_json(prompt, output_schema, **kwargs)
+```
 
-## ADR-008: SQLite y autenticación local para el MVP
+El resultado normaliza texto, JSON, modelo, identificador, latencia, metadata y
+uso. La factoría selecciona:
 
-**Decisión.** Usar SQLite con WAL, claves foráneas y transacciones cortas.
-Contraseñas con PBKDF2-HMAC-SHA256, sal aleatoria y comparación constante.
-Alertas, informes y ejecuciones se asocian a `user_id`.
+- `CodexClient`, mediante `codex exec` y eventos JSONL;
+- `OpenAIResponsesClient`, mediante Responses API;
+- `OpenAICompatibleChatClient`, mediante Chat Completions para Ollama/vLLM;
+- `OpenAICompatibleEmbeddings`, mediante `/v1/embeddings`.
 
-Es una decisión de reproducibilidad, no de escala. Streamlit Session State no
-ofrece SSO, MFA, recuperación, SCIM, bloqueo por intentos ni revocación
-corporativa. Producción debe migrar a PostgreSQL, SSO OIDC/SAML, cookies seguras,
-RBAC, rate limiting y auditoría inmutable.
+**Por qué dos superficies HTTP.** Responses API es la interfaz nativa recomendada
+para OpenAI y conserva razonamiento, uso y JSON Schema. Chat Completions tiene
+mayor compatibilidad efectiva entre runtimes abiertos. Forzar una única
+superficie habría reducido portabilidad o desaprovechado la API nativa.
 
-La identidad local de CENtinela no concede acceso a Codex. Ambas capas deben
-administrarse y auditarse de forma independiente.
+**Seguridad de configuración.** Las URLs deben ser HTTP(S) absolutas y no pueden
+incluir credenciales, query ni fragment. Las claves son `SecretStr`, se revelan
+solo al construir el cliente y se excluyen de `public_dict`, errores y trazas.
 
-## ADR-009: Streamlit como interfaz del MVP
+**Límite.** “OpenAI-compatible” no garantiza equivalencia total. El contrato se
+prueba, pero cada combinación servidor/modelo debe validar JSON Schema,
+razonamiento y campos `usage`. Un único servidor vLLM suele cargar un modelo; un
+gateway multimodelo o endpoints por rol son responsabilidad del despliegue.
 
-**Decisión.** Mantener una aplicación multipanel en un único `app.py` y módulos
-de dominio separados.
+## ADR-003: routing de modelos por valor
 
-Streamlit permite demostrar login, scraping, tabla, alertas, informe, chat,
-descargas y observabilidad sin mantener dos stacks. Su modelo de rerun obliga a
-acciones idempotentes y a no iniciar red durante imports. Cada informe crea sus
-propios componentes para no mezclar trazas entre sesiones.
+**Estado:** aceptada.
 
-El siguiente umbral de escala justifica FastAPI, workers y frontend separado;
-no se introduce esa complejidad antes de necesitar concurrencia, colas o una
-API contractual.
+**Decisión.** Separar proveedor y modelo por rol. `AI_PROVIDER` es el default y
+los overrides `*_PROVIDER` permiten routing híbrido.
 
-## Trazabilidad y control de alucinaciones
+| Rol | Codex | OpenAI API | Perfil abierto inicial |
+|---|---|---|---|
+| Planner/filtro/RAG | Luna | GPT-4o mini | Qwen3.5 9B |
+| Informe | Sol | GPT-4o | Qwen3.5 9B demo; 27B candidato |
+| Judge | Terra | GPT-4o mini | Qwen3.5 9B demo; Mistral Small 3.1 candidato |
 
-La defensa se implementa en capas:
+El enunciado exige GPT-4o mini para planificación/filtrado y GPT-4o para la
+redacción final en la ruta API; esos defaults están preservados. Codex utiliza
+los tiers Luna/Terra/Sol equivalentes por valor. Ollama usa un solo modelo en la
+demo para evitar cargar varios pesos; producción debe decidir por benchmark.
 
-1. Solo entran documentos con organismo y URL HTTP(S).
-2. El Planner no inventa destinos: las fuentes están registradas en código.
-3. El Executor recibe un catálogo cerrado y delimitado como datos no confiables.
-4. Toda afirmación material exige `[Fuente | URL]` en la misma línea.
-5. Un validador comprueba sintaxis y pertenencia exacta al catálogo.
-6. Terra evalúa relevancia, cobertura, claridad y trazabilidad.
-7. La interfaz permite abrir la fuente primaria.
-8. Ante fallo interno durante una ejecución ya autorizada puede construirse una
-   salida extractiva para evaluación, pero la UI no inicia ni presenta una
-   generación como IA sin una sesión Codex válida.
+**Regla de promoción.** Un modelo abierto no se aprueba porque responda. Debe
+superar un conjunto dorado chileno en:
 
-Una cita acredita procedencia, no verdad jurídica. El Judge tampoco certifica
-vigencia o aplicabilidad. El especialista regulatorio permanece en el circuito.
+- porcentaje de afirmaciones con cita válida;
+- afirmaciones no respaldadas y severidad;
+- cobertura de activos y organismos;
+- JSON válido y estabilidad del Judge;
+- Recall@k/nDCG del RAG;
+- latencia p50/p95 y throughput;
+- tokens, VRAM pico y coste amortizado por informe.
 
-## Memoria y temporalidad
+**Riesgo de sesgo.** Usar el mismo modelo como Executor y Judge reduce diversidad
+de evaluación. Se acepta en el perfil Ollama de demo por capacidad; producción
+debe probar un Judge distinto o un ensemble con controles deterministas.
 
-SQLite conserva el último informe aprobado del usuario. El Executor recibe una
-versión limitada para distinguir novedades, continuidad y ausencia de cambios.
-Un informe rechazado queda en la traza de ejecución para auditoría, pero no se
-distribuye ni entra en la memoria diaria. No se mantiene memoria conversacional
-ilimitada porque aumentaría consumo, mezclaría evidencia obsoleta y dificultaría
-rectificación.
+## ADR-004: RAG local por defecto y embeddings intercambiables
 
-La fecha civil usa `America/Santiago`; timestamps y latencias de auditoría se
-persisten en UTC.
+**Estado:** aceptada.
 
-## Modos degradados
+**Decisión.** Mantener `local_hash` como default reproducible y permitir
+embeddings OpenAI-compatible. ChromaDB persiste el vector y metadata de
+procedencia. La identidad del espacio incluye proveedor/modelo; una versión
+distinta fuerza reindexación.
 
-- Si falla una fuente, se conserva el resto y se muestra el fallo.
-- Si Codex no está autenticado, datos, login, dashboard, scraping, alertas e
-  índice local siguen operativos; la UI bloquea informe y RAG generativos y no
-  presenta un fallback como si fuera una respuesta de IA.
-- Si falla la consulta vectorial, se intenta recuperación lexical.
-- Si Chroma no está disponible, las noticias permanecen en SQLite.
-- Si falla el Judge, el informe no se presenta como aprobado por IA.
-- Si no hay novedades, no se genera contenido de relleno.
+**Ventajas de `local_hash`.** Cero secretos, descargas y coste remoto; alta
+reproducibilidad; rendimiento razonable para vocabulario regulatorio exacto.
 
-Los errores se sanitizan para no almacenar prompts completos, tokens de acceso
-ni cabeceras de autenticación.
+**Límites.** No captura toda la similitud semántica. Los embeddings neuronales
+pueden mejorar paráfrasis, pero requieren recursos, gobierno de modelo y una
+evaluación Recall@k. `qwen3-embedding:0.6b` es un candidato, no un resultado de
+benchmark afirmado.
 
-## Evaluación propuesta
+**Trazabilidad.** El modelo estructurado devuelve `source_ids`; la aplicación
+construye las citas desde el catálogo. La URL no se acepta como texto libre del
+modelo.
 
-| Dimensión | Métrica | Umbral inicial |
-|---|---|---:|
-| Captura | fuentes disponibles / esperadas | >= 6/7 |
-| Frescura | demora publicación-ingesta | p95 < 6 h |
-| Retrieval | Recall@5 de documento relevante | >= 0,80 |
-| Citas | afirmaciones con cita válida | 100 % |
-| Groundedness | afirmaciones respaldadas según revisor | >= 0,95 |
-| Relevancia | ítems útiles para activos objetivo | >= 0,80 |
-| Consumo | tokens por informe por modelo | presupuesto interno |
-| Disponibilidad IA | ejecuciones Codex completadas | >= 99 % en ventana acordada |
-| Latencia | informe end-to-end | p95 acordado |
+## ADR-005: observabilidad y tokenomics
 
-El Judge es una señal continua, no el benchmark único. Debe calibrarse contra
-un conjunto dorado humano y versionar prompt, modelo, esfuerzo y rúbrica.
+**Estado:** aceptada.
 
-En este MVP, “llamadas a herramientas” se observa a dos niveles: LangGraph
-registra el nodo Scraper como paso con estado, latencia, cobertura y
-`capture_stats`, mientras cada documento conserva organismo, URL, método y
-estado de recuperación. No existe aún una tabla independiente por petición HTTP
-o intento de fallback. Producción debe añadir spans por host/URL con estado,
-latencia, reintento y bytes, aplicando retención y sanitización para no convertir
-la telemetría en un canal de datos sensibles.
+**Decisión.** Un callback LangChain registra exactamente los contadores
+reportados por el backend:
 
-## Validación real de aceptación — 13 de agosto de 2026
+```text
+prompt_tokens
+completion_tokens
+latency_seconds
+model
+provider
+billing_mode
+```
 
-La entrega incluye en `docs/demo/` una muestra generada en el contenedor final.
-No es una promesa de SLA ni un benchmark estadístico; sí demuestra el recorrido
-completo con datos y telemetría reales:
+Para una tarifa de entrada `Pi` y salida `Po`, expresada en USD por millón:
 
-| Prueba | Resultado observado |
-|---|---:|
-| Fuentes recuperadas | 7/7, sin errores de captura |
-| Suite determinista | 88 pruebas superadas |
-| Informe aprobado | 78/100, validación determinista correcta |
-| Informe · tokens | 35.203 entrada + 3.702 salida |
-| Informe · llamadas / latencia | 2 llamadas / 77,9 s end-to-end |
-| RAG CNE + SEA | ambas fuentes presentes, URLs válidas |
-| RAG · tokens / latencia | 12.463 entrada + 229 salida / 8,81 s |
-| Atribución económica | N/A por suscripción; contadores USD/CLP = 0 |
+```text
+cost_usd = prompt_tokens / 1_000_000 * Pi
+         + completion_tokens / 1_000_000 * Po
+cost_clp = cost_usd * 940
+```
 
-Una primera ejecución del informe fue rechazada correctamente y no creó
-artefactos distribuibles. Ese fallo permitió endurecer el catálogo del Judge:
-ahora siempre recibe todos los documentos realmente citados, aunque el corpus
-de evidencia general se trunque por presupuesto. La repetición fue aprobada sin
-citas desconocidas ni líneas materiales sin cita. Esto ilustra el valor del
-control fail-closed y de conservar trazas de ejecuciones rechazadas.
+No se estiman tokens por longitud. Si el proveedor no entrega `usage`, se
+registra cero y se marca `token_usage_status=not_reported` para diagnóstico. Los
+embeddings HTTP emiten sus tokens de entrada por lote; para
+`text-embedding-3-small` se aplica el precio oficial configurado.
 
-## Riesgos conocidos
+### Semántica económica
 
-1. Cambios de HTML, WAF y certificados de portales estatales.
-2. Fechas inconsistentes y documentos PDF pendientes de extracción profunda.
-3. Cita correcta con interpretación normativa equivocada.
-4. Duplicados entre organismos y ramas legislativas.
-5. Prompt injection dentro de contenido público.
-6. Recall limitado del embedding local ante paráfrasis sin vocabulario común.
-7. Expiración, revocación o límites de la sesión ChatGPT/Codex.
-8. Modelos configurados no disponibles en un workspace concreto.
-9. Exposición del volumen de autenticación a usuarios con acceso Docker.
-10. Latencia y concurrencia por iniciar un proceso CLI por turno.
-11. SQLite, Chroma local y Session State insuficientes para alta disponibilidad.
-12. Campos económicos malinterpretados: cero atribuible no equivale a gratuito.
+| Modo | `cost_usd` | Interpretación |
+|---|---:|---|
+| OpenAI API | calculado | tarifa por tokens atribuible |
+| Codex | `0` en esquema | coste por llamada N/A, incluido en cuota/suscripción |
+| Ollama/vLLM | `0` API | no hay tarifa API; existe coste de infraestructura |
+
+`SELF_HOSTED_COMPUTE_USD_PER_HOUR` permite una estimación por tiempo de llamada.
+Se guarda en metadata como coste de cómputo estimado y nunca se suma al coste API
+exacto. No incluye necesariamente ociosidad, energía, almacenamiento ni
+overhead; producción debe obtenerlos de la plataforma cloud.
+
+**Pricing.** GPT-4o mini y GPT-4o tienen defaults explícitos para cumplir la
+prueba. Nuevos modelos o tarifas deben versionarse y reconciliarse; un alias sin
+precio no rompe una respuesta válida, pero queda `pricing_status=unknown`.
+
+## ADR-006: citas y LLM-as-Judge fail-closed
+
+**Estado:** aceptada.
+
+Cada afirmación material debe terminar en la misma línea con
+`[Fuente | URL]`. La validación local comprueba existencia de cita, URL
+canonicalizada y pertenencia al catálogo. El Judge evalúa relevancia, cobertura,
+claridad, respaldo y trazabilidad, pero no puede convertir una cita localmente
+inválida en válida.
+
+Un informe se persiste como completado solo cuando:
+
+1. existe evidencia normalizada;
+2. las citas superan la barrera determinista;
+3. el Judge devuelve una evaluación estructurada;
+4. `approved=true` y el score alcanza el umbral.
+
+La cita acredita procedencia, no validez jurídica de la interpretación. La
+distribución externa sigue requiriendo revisión de un especialista.
+
+## ADR-007: scraping resiliente y sin evidencia sintética
+
+**Estado:** aceptada.
+
+Cada organismo tiene adaptadores HTML/RSS tolerantes a cambios y límites por
+fuente. Los fallos se aíslan, se registran y no cancelan necesariamente el resto.
+El proxy de lectura `r.jina.ai` solo recupera la misma URL pública; se marca como
+fallback y la cita conserva el origen oficial.
+
+No existen noticias simuladas en el recorrido vivo. Si no hay evidencia, el
+estado lo muestra y el informe no inventa cobertura.
+
+**Límite.** Un scraper HTML requiere mantenimiento ante rediseños, rate limits,
+robots y cambios contractuales. Producción debe priorizar APIs/RSS oficiales,
+guardar artefactos de captura y añadir observabilidad por petición.
+
+## ADR-008: persistencia y autenticación del MVP
+
+**Estado:** aceptada con deuda explícita.
+
+SQLite y Chroma embebido permiten una réplica de una sola instancia sin
+servicios gestionados. El login local usa PBKDF2 con sal, comparación constante
+y aislamiento de registros por usuario.
+
+No son decisiones de producción multi-réplica. El objetivo productivo es:
+
+- PostgreSQL con migraciones, backups y point-in-time recovery;
+- vector store con HA o reconstrucción probada desde documentos;
+- SSO/OIDC, MFA, RBAC y provisión/desprovisión corporativa;
+- secret manager y rotación;
+- auditoría inmutable y política de retención.
+
+La sesión Codex es distinta del usuario Streamlit. Permite la demo individual,
+pero no debe utilizarse como identidad humana compartida de un servicio cloud.
+
+## ADR-009: Docker y perfiles de despliegue
+
+**Estado:** aceptada.
+
+La imagen única incluye el CLI Codex y el SDK OpenAI. El servicio se ejecuta como
+UID no privilegiado, filesystem raíz de solo lectura, capabilities eliminadas,
+`no-new-privileges`, límite de procesos y `tmpfs` acotado.
+
+`docker-compose.yml` conserva Codex. `docker-compose.ollama.yml` añade servidor,
+health check, bootstrap deduplicado y volumen de pesos; el override NVIDIA es
+separado. Ollama se enlaza solo a loopback y nunca debe exponerse directamente.
+
+El bootstrap dinámico de pesos es adecuado para desarrollo, no para producción.
+Cloud debe fijar imagen y revisión por digest, verificar licencia/SBOM y obtener
+pesos desde un registro aprobado antes de servir tráfico.
+
+## Estrategia de costes
+
+1. Mantener Planner/filtro deterministas en Codex; en API/self-hosted usar el
+   modelo barato exigido y fallar hacia el contrato determinista.
+2. Usar modelos pequeños para alto volumen y reservar el modelo de mayor calidad
+   para la síntesis que llega al analista.
+3. Limitar documentos, caracteres, `top_k`, revisiones y tokens de salida.
+4. Reutilizar snapshots recientes e indexar solo versiones documentales nuevas.
+5. Medir por llamada y por informe, no solo por mes.
+6. Comparar TCO self-hosted con API incluyendo utilización de GPU e inactividad.
+7. Definir budgets y alertas por tenant antes de habilitar tráfico productivo.
+
+## Pruebas y evidencia
+
+La suite cubre configuración, secretos, callbacks, pricing, Codex CLI,
+Responses API, Chat Completions, embeddings, grafo, Judge fail-closed, citas,
+RAG, base de datos, parsers y helpers del frontend. Los contratos HTTP usan
+dobles y no consumen cuota. Docker Compose se valida para los perfiles Codex,
+Ollama CPU y Ollama NVIDIA.
+
+`docs/demo/` contiene capturas y una ejecución Codex aprobada. Demuestra la ruta
+Codex, no la equivalencia de calidad de los modelos abiertos. Esa comparación
+requiere el benchmark dorado y hardware representativo.
+
+## Riesgos abiertos
+
+| Riesgo | Mitigación actual | Acción de producción |
+|---|---|---|
+| cambio de HTML oficial | parsers tolerantes y fallo por fuente | contratos/API, snapshots y alertas |
+| prompt injection documental | delimitación y allowlist de citas | filtros, evaluación adversarial |
+| alucinación con cita real | extracto visible y Judge | revisión humana y benchmark de grounding |
+| Judge correlacionado | reglas deterministas | modelo/ensemble independiente |
+| indisponibilidad LLM | health y estado degradado | cola, retry con jitter y fallback gobernado |
+| endpoint Ollama expuesto | loopback | gateway, mTLS y NetworkPolicy |
+| saturación GPU/KV cache | concurrencia conservadora | load test y autoscaling por cola/TTFT |
+| secreto en logs | `SecretStr` y sanitización | DLP, redacción central y auditoría |
+| SQLite multi-réplica | una instancia | PostgreSQL y migraciones |
+| autenticación local | hash robusto | SSO/OIDC, MFA y RBAC |
 
 ## Roadmap a producción
 
-### Fase 1 — endurecimiento funcional
+### Fase 1 — piloto controlado
 
-- Contratos de fuente y monitores sintéticos.
-- Extracción de PDF/adjuntos, OCR y versionado documental.
-- Scheduler idempotente, caché HTTP y dead-letter queue.
-- Dataset dorado para retrieval, groundedness y citas.
-- Presupuestos de tokens, timeout y circuit breakers por rol.
-- Runbook de login, expiración, logout, rotación y revocación Codex.
-- Prueba automatizada que verifique presencia de `turn.completed.usage`.
+- Crear corpus dorado y umbrales de promoción.
+- Ejecutar Ollama en una instancia con límites de concurrencia.
+- Medir calidad, latencia, RAM/VRAM y coste por informe.
+- Completar runbooks de modelos, fuentes y recuperación.
 
-### Fase 2 — plataforma corporativa
+### Fase 2 — plataforma cloud
 
-- FastAPI, workers y colas administradas.
-- PostgreSQL + pgvector, object storage y backups probados.
-- SSO, RBAC, cifrado, WAF, rate limiting y SIEM.
-- Identidad Codex dedicada o access token empresarial en runners confiables,
-  sujeto a política del workspace.
-- Volúmenes y namespaces separados por entorno y tenant.
-- OpenTelemetry y objetivos de servicio.
+- Separar UI, workers de scraping y workers de generación mediante cola.
+- Migrar a PostgreSQL y vector store con backup.
+- Implantar SSO/OIDC, RBAC y secret manager.
+- Servir vLLM tras gateway privado con TLS, cuotas y límites.
+- Añadir OpenTelemetry, métricas de GPU, TTFT, p95 y alertas.
 
-### Fase 3 — producto regulatorio
+### Fase 3 — gobierno y resiliencia
 
-- Taxonomía y knowledge graph de normas, activos y obligaciones.
-- Detección de cambios semánticos y plazos accionables.
-- Workflow humano revisar/aprobar/publicar con firma.
-- Notificaciones por email, Teams o Slack.
-- Multi-país y evaluación por jurisdicción.
-- Feedback explícito para ranking sin entrenar sobre datos sensibles por defecto.
+- Evaluación continua en sombra y canary por versión de modelo/prompt.
+- Registro de modelos, licencias, SBOM, firma y rollback.
+- Auditoría inmutable, retención y clasificación de datos.
+- Multi-AZ, pruebas de carga, restauración y objetivos RTO/RPO.
+- Human-in-the-loop formal antes de distribuir un informe.
 
-## Compatibilidad con el enunciado original
+### SLO inicial propuesto para piloto
 
-El enunciado oficial es tecnológicamente agnóstico. El perfil Codex-only mantiene
-Planner-Executor, LLM-as-Judge, routing por valor, Chroma, citas y observabilidad,
-y documenta con precisión dónde se usa generación, qué pasos son deterministas y
-qué costes son atribuibles. No se presenta la suscripción como tarifa API.
+- frontend disponible al 99,5 % mensual;
+- RAG p95 inferior a 15 s con modelo caliente;
+- informe p95 inferior a 120 s;
+- 100 % de afirmaciones materiales con cita localmente válida;
+- JSON inválido inferior al 0,5 %;
+- cero secretos en logs y artefactos.
 
-## Decisiones que cambiarían con escala
+Estos valores son hipótesis operativas y deben calibrarse con carga real.
 
-| Señal | Cambio |
-|---|---|
-| Decenas de usuarios concurrentes | Separar API, workers y UI; migrar SQLite |
-| Cientos de miles de fragmentos | pgvector o índice administrado evaluado |
-| Varias réplicas | Identidad Codex de servicio y aislamiento por replica/tenant |
-| Informes vinculantes | Aprobación humana, firma y control de versiones |
-| Datos internos o personales | DLP, residencia, retención y acceso reforzado |
+## Conclusión
 
-## Defensa de la solución
-
-El valor de CENtinela no depende de producir más texto. Depende de convertir
-siete canales dispersos en una cadena verificable y operable: evidencia,
-recuperación, síntesis, evaluación y revisión humana. La arquitectura Codex-only
-reduce secretos y simplifica la demo personal, a cambio de límites de
-industrialización que se declaran y tienen un roadmap concreto.
+La arquitectura cumple el objetivo de la prueba sin encerrar el producto en un
+único proveedor. Codex proporciona una demo de alta calidad con la cuenta del
+operador; OpenAI API ofrece una ruta gestionada y facturable; Ollama facilita
+portabilidad; vLLM permite una evolución cloud privada. La ventaja sostenible no
+es el nombre del modelo, sino el contrato de evidencia, las barreras de calidad,
+la observabilidad y la capacidad de comparar proveedores con la misma prueba.

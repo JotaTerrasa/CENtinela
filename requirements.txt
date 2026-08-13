@@ -4,6 +4,7 @@ pydantic==2.13.4
 pydantic-settings==2.15.0
 langchain-core==1.5.4
 langgraph==1.2.11
+openai==2.54.0
 # 0.6.3 conserva PersistentClient y queda fuera del rango vulnerable
 # >=1.0.0,<=1.5.9 de CVE-2026-45829. Chroma no se expone como servidor.
 chromadb==0.6.3

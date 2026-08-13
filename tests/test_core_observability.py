@@ -96,6 +96,31 @@ def test_manual_usage_accumulates_without_rounding(tmp_path: Path) -> None:
     assert callback.snapshot()["total_tokens"] == 42
 
 
+def test_missing_backend_usage_is_zero_but_explicitly_diagnostic(tmp_path: Path) -> None:
+    callback = CostTrackingCallback(
+        model="gpt-4o-mini",
+        settings=make_settings(tmp_path),
+        metadata={"billing_mode": "api", "provider": "openai_api"},
+    )
+    run_id = uuid4()
+    callback.on_llm_start(
+        {"name": "OpenAIResponses"},
+        ["prompt no persistido"],
+        run_id=run_id,
+        invocation_params={"model": "gpt-4o-mini"},
+    )
+    callback.on_llm_end(
+        LLMResult(generations=[], llm_output={"model_name": "gpt-4o-mini"}),
+        run_id=run_id,
+    )
+
+    call = callback.calls[0]
+    assert call["prompt_tokens"] == call["completion_tokens"] == 0
+    assert call["cost_usd"] == call["cost_clp"] == 0
+    assert call["metadata"]["token_usage_status"] == "not_reported"
+    assert call["metadata"]["api_cost_status"] == "unavailable_no_usage"
+
+
 def test_error_sanitizer_redacts_secrets_and_prompt_payloads() -> None:
     error = RuntimeError(
         'Authorization: Bearer abc123 prompt="contenido confidencial" '
@@ -106,6 +131,16 @@ def test_error_sanitizer_redacts_secrets_and_prompt_payloads() -> None:
     assert "contenido confidencial" not in safe
     assert "api_key=visible" not in safe
     assert "[REDACTED" in safe
+
+
+def test_error_sanitizer_redacts_configured_secret_without_a_field_name() -> None:
+    safe = sanitize_error(
+        RuntimeError("upstream echoed gateway-private verbatim"),
+        sensitive_values=("gateway-private",),
+    )
+
+    assert "gateway-private" not in safe
+    assert "[REDACTED_SECRET]" in safe
 
 
 def test_unknown_provider_alias_does_not_break_a_successful_call(tmp_path: Path) -> None:

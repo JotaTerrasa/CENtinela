@@ -1,0 +1,59 @@
+[
+  {
+    "id": "bess-operacion",
+    "question": "Resume las señales que un analista BESS debería vigilar.",
+    "required_terms": ["bess", "almacenamiento", "operación"],
+    "documents": [
+      {
+        "title": "Ficha sintética CNE para evaluación",
+        "source": "Comisión Nacional de Energía (CNE)",
+        "url": "https://www.cne.cl/prensa/",
+        "content": "Caso de prueba: la evidencia menciona BESS y almacenamiento como materias de seguimiento regulatorio."
+      },
+      {
+        "title": "Ficha sintética CEN para evaluación",
+        "source": "Coordinador Eléctrico Nacional (CEN)",
+        "url": "https://www.coordinador.cl/novedades/",
+        "content": "Caso de prueba: el analista debe relacionar el seguimiento del almacenamiento con la operación del SEN."
+      }
+    ]
+  },
+  {
+    "id": "permisos-hidrogeno",
+    "question": "¿Qué frentes institucionales aparecen para hidrógeno verde y permisos?",
+    "required_terms": ["hidrógeno verde", "permisos", "ambiental"],
+    "documents": [
+      {
+        "title": "Ficha sintética Ministerio para evaluación",
+        "source": "Ministerio de Energía de Chile",
+        "url": "https://energia.gob.cl/noticias",
+        "content": "Caso de prueba: el hidrógeno verde requiere seguimiento de política energética y coordinación institucional."
+      },
+      {
+        "title": "Ficha sintética SEA para evaluación",
+        "source": "Servicio de Evaluación Ambiental (SEA)",
+        "url": "https://www.sea.gob.cl/noticias",
+        "content": "Caso de prueba: los permisos y criterios de evaluación ambiental forman un frente separado de vigilancia."
+      }
+    ]
+  },
+  {
+    "id": "data-center-red",
+    "question": "Explica qué debe vigilar un proyecto de data center respecto de la red.",
+    "required_terms": ["data center", "transmisión", "conexión"],
+    "documents": [
+      {
+        "title": "Ficha sintética transmisión para evaluación",
+        "source": "Coordinador Eléctrico Nacional (CEN)",
+        "url": "https://www.coordinador.cl/novedades/",
+        "content": "Caso de prueba: un data center debe vigilar transmisión, conexión y condiciones operativas de la red."
+      },
+      {
+        "title": "Ficha sintética fiscalización para evaluación",
+        "source": "Superintendencia de Electricidad y Combustibles (SEC)",
+        "url": "https://www.sec.cl/",
+        "content": "Caso de prueba: la seguridad y fiscalización eléctrica deben analizarse aparte de la disponibilidad de conexión."
+      }
+    ]
+  }
+]
