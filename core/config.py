@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "staging", "production"] = (
         "development"
     )
+    public_demo_mode: bool = False
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     business_timezone: str = DEFAULT_BUSINESS_TIMEZONE
 
@@ -313,11 +314,36 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Las credenciales bootstrap no se permiten con APP_ENV=production"
             )
+        if self.app_env == "production" and self.public_demo_mode:
+            raise ValueError(
+                "PUBLIC_DEMO_MODE es una evidencia compartida y no se permite "
+                "con APP_ENV=production"
+            )
+        if self.public_demo_mode and has_username:
+            raise ValueError(
+                "PUBLIC_DEMO_MODE no admite credenciales bootstrap"
+            )
+        if self.public_demo_mode and any(
+            secret is not None
+            for secret in (
+                self.openai_api_key,
+                self.ollama_api_key,
+                self.vllm_api_key,
+            )
+        ):
+            raise ValueError(
+                "PUBLIC_DEMO_MODE no admite secretos de proveedores de IA"
+            )
 
         self.database_path = self._absolute_path(self.database_path)
         self.chroma_path = self._absolute_path(self.chroma_path)
         self.reports_path = self._absolute_path(self.reports_path)
         self.codex_workdir = self._absolute_path(self.codex_workdir)
+        if self.public_demo_mode:
+            # El replay es un artefacto inmutable: ni siquiera prepara rutas de
+            # runtime. Así puede servirse con un filesystem totalmente de solo
+            # lectura y sin escrituras invisibles durante Settings().
+            return self
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.chroma_path.mkdir(parents=True, exist_ok=True)
         self.reports_path.mkdir(parents=True, exist_ok=True)

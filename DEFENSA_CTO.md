@@ -1,9 +1,11 @@
 # Defensa de CENtinela ante CTO
 
-Guion para una exposición de 8–10 minutos. Describe la arquitectura final del
-repositorio: orquestación determinista donde no aporta valor llamar a un modelo,
-routing barato en los perfiles HTTP, RAG trazable y barreras de calidad antes de
-persistir o distribuir un informe.
+Guion para una exposición de 8–10 minutos y banco de respuestas para el turno
+de preguntas. Describe la arquitectura final del repositorio: orquestación
+determinista donde no aporta valor llamar a un modelo, routing barato en los
+perfiles HTTP, RAG trazable y barreras de calidad antes de persistir o distribuir
+un informe. El recorrido operativo de siete minutos, su preparación y sus
+contingencias están separados en [`GUION_DEMO.md`](GUION_DEMO.md).
 
 ## Mensaje central
 
@@ -175,117 +177,13 @@ inmutable.”
 la cadena de evidencia más defendible. El código restringe y prioriza; Codex
 redacta y evalúa; la URL y el especialista conservan el control.”
 
-## Recorrido exacto de demo — 5 minutos
+## Uso durante la presentación
 
-| Tiempo | Pantalla | Acción | Evidencia |
-|---:|---|---|---|
-| 0:00–0:25 | Acceso | Iniciar sesión | Separación por usuario y sesión Codex ChatGPT |
-| 0:25–1:15 | Dashboard | Mostrar foco, frescura, cobertura y abrir URL | Corpus real y trazabilidad |
-| 1:15–1:40 | Alertas | Abrir regla BESS/transmisión | Priorización determinista |
-| 1:40–2:55 | Informe | Abrir un informe aprobado, cita y Judge | Barrera de distribución |
-| 2:55–3:35 | Chat RAG | Ejecutar pregunta corta | Luna, retrieval local y fuentes |
-| 3:35–4:30 | Observabilidad | Abrir llamadas Sol/Terra/Luna | Tokens, permisos y coste N/A |
-| 4:30–5:00 | Arquitectura | Mostrar routing y límites | Criterio técnico |
-
-La operación en vivo preferida es una consulta RAG sobre un índice preparado.
-El scraping completo y la generación del informe dependen de terceros y deben
-quedar validados antes de la exposición. Nunca utilizar como muestra un informe
-rechazado salvo que se quiera demostrar explícitamente la barrera de calidad.
-
-## Preparación técnica
-
-### Ruta Docker recomendada
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-docker compose exec centinela codex login --device-auth
-docker compose exec centinela codex login status
-.venv/bin/python -m pytest -q
-```
-
-`codex login status` debe confirmar explícitamente **ChatGPT**. Una sesión por
-API key no satisface el perfil de ejecución. No mostrar el código device auth,
-el contenido de `/home/centinela/.codex` ni ningún token durante la demo.
-
-En la aplicación:
-
-1. Crear un usuario de demo con contraseña no reutilizada.
-2. Actualizar las fuentes con antelación y confirmar publicaciones persistidas.
-3. Crear la alerta `BESS y transmisión`.
-4. Generar un informe y comprobar que el Judge lo aprueba.
-5. Confirmar que el informe aprobado aparece en historial y descarga.
-6. Formular dos preguntas RAG y abrir sus fuentes.
-7. Revisar tokens, `auth_method=chatgpt`, `permission_profile` y coste N/A.
-8. Dejar preparados Dashboard, Informe, Chat, Observabilidad y Arquitectura.
-
-### Treinta minutos antes
-
-```bash
-docker compose ps
-docker compose exec centinela codex login status
-docker compose logs --tail=100 centinela
-```
-
-- Abrir <http://127.0.0.1:8501>.
-- Confirmar acceso efectivo a Sol, Terra y Luna.
-- Abrir dos URLs oficiales.
-- Verificar que la cobertura parcial, si existe, está explicada.
-- Conservar un informe **aprobado** y una respuesta RAG ya validados.
-- Revisar que no haya notificaciones ni pestañas con información privada.
-- No borrar volúmenes ni reconstruir después de validar la demo.
-
-## Plan de contingencia
-
-### Falla una fuente pública
-
-> “La captura está aislada por organismo. El lote continúa, la cobertura parcial
-> queda visible y el snapshot permite seguir trabajando. No sustituimos la
-> fuente por contenido inventado.”
-
-Usar el snapshot existente y no dedicar la demo a reintentos.
-
-### Codex no está autenticado
-
-Comprobar `docker compose exec centinela codex login status`. Si la sesión
-expiró, repetir device auth. Sin una sesión ChatGPT confirmada, CENtinela bloquea
-informe y chat; dashboard, scraping, alertas e índice local siguen disponibles.
-No copiar `auth.json` desde una máquina personal durante la exposición.
-
-### Codex alcanza límites o no responde
-
-> “La capa de evidencia continúa operativa, pero no presento un fallback como si
-> fuera una ejecución generativa autorizada. Muestro el último informe aprobado
-> y la traza fallida.”
-
-El fallback protege una ejecución ya iniciada; no sustituye la autenticación ni
-permite distribuir un resultado que Terra no haya aprobado.
-
-### Un modelo no está disponible
-
-> “Los modelos se solicitan explícitamente por responsabilidad. El error queda
-> observable y no se cambia silenciosamente de modelo durante una ejecución
-> auditada.”
-
-### Falla la recuperación vectorial
-
-> “El sistema intenta recuperación lexical sobre el corpus local y etiqueta el
-> modo de respuesta. No presenta el fallback como búsqueda vectorial.”
-
-### El Judge rechaza el informe
-
-> “El rechazo demuestra que el control tiene efecto: la ejecución se marca
-> `rejected`, el informe no se distribuye, no se guarda en el historial y no
-> contamina la memoria del día.”
-
-Mostrar la traza rechazada en Observabilidad y continuar con un informe aprobado
-anterior.
-
-### Tokens aparecen en cero
-
-> “Verifico si el CLI publicó `turn.completed.usage`; no estimo tokens desde
-> caracteres. El coste Codex es N/A porque no existe una tarifa atribuible por
-> turno bajo esta sesión.”
+Este archivo sirve para preparar el discurso de arquitectura y responder al
+comité. Durante la demo se sigue [`GUION_DEMO.md`](GUION_DEMO.md), que contiene
+el recorrido cronometrado, comandos de preflight, Plan B y mensajes de
+contingencia. Así se evita repetir instrucciones operativas y se puede ensayar
+cada artefacto de forma independiente.
 
 ## Preguntas difíciles y respuestas defendibles
 

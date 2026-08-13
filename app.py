@@ -768,6 +768,12 @@ def render_auth(database: Database) -> None:
 
 
 def _refresh_sources(settings: Settings, database: Database) -> tuple[int, list[str]]:
+    if settings.public_demo_mode or getattr(database, "is_read_only_demo", False):
+        from core.demo import DemoReadOnlyError
+
+        raise DemoReadOnlyError(
+            "La captura de fuentes está bloqueada en el replay público"
+        )
     scraper = scraper_service()
     articles = scraper.fetch_all(max_per_source=settings.scraper_max_articles)
     normalized = [normalize_article(item) for item in articles]
@@ -815,13 +821,17 @@ def _news_frame(news: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for item in news:
         topics = item.get("keywords") or item.get("topics") or []
+        fallback = item.get("is_fallback")
+        capture_method = (
+            "N/D" if fallback is None else ("Fallback" if fallback else "Directa")
+        )
         rows.append(
             {
                 "Fecha": _format_timestamp(item.get("published_at") or item.get("fetched_at")),
                 "Organismo": item.get("source") or "—",
                 "Titular": item.get("title") or "—",
                 "Temas": ", ".join(str(value) for value in topics),
-                "Fallback": "Sí" if item.get("is_fallback") else "No",
+                "Método de captura": capture_method,
                 "URL": item.get("url") or "",
             }
         )
@@ -832,10 +842,21 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
     header, action = st.columns([3, 1])
     with header:
         st.title("Radar regulatorio")
-        st.caption("Publicaciones oficiales recuperadas y enlazadas a su evidencia primaria.")
+        st.caption(
+            "Catálogo conservado de citas oficiales enlazadas a su fuente primaria."
+            if settings.public_demo_mode
+            else "Publicaciones oficiales recuperadas y enlazadas a su evidencia primaria."
+        )
     with action:
         st.write("")
-        refresh = st.button("Actualizar fuentes", type="primary", width="stretch")
+        refresh = st.button(
+            "Actualizar fuentes",
+            type="primary",
+            width="stretch",
+            disabled=settings.public_demo_mode,
+        )
+        if settings.public_demo_mode:
+            st.caption("Bloqueado en la demo pública")
     if refresh:
         with st.spinner("Consultando organismos oficiales…"):
             try:
@@ -861,11 +882,34 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
     if len(latest_display) == 10 and latest_display.count("/") == 2:
         latest_display = f"{latest_display[:6]}{latest_display[-2:]}"
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Publicaciones", len(news))
-    c2.metric("Fuentes", f"{snapshot['coverage_count']}/7")
-    c3.metric("Coincidencias", len(matches))
-    c4.metric("Evidencia reciente", latest_display)
+    if settings.public_demo_mode:
+        acceptance = getattr(database, "acceptance_snapshot", {})
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Catálogo de citas", len(news))
+        c2.metric("Organismos citados", snapshot["coverage_count"])
+        c3.metric(
+            "Snapshot de aceptación",
+            int(acceptance.get("publications_in_dashboard") or 0),
+        )
+        c4.metric(
+            "Fuentes recuperadas",
+            f"{int(acceptance.get('sources_recovered') or 0)}/7",
+        )
+    else:
+        direct_count = len(news) - fallback_count
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Publicaciones", len(news))
+        c2.metric("Fuentes", f"{snapshot['coverage_count']}/7")
+        c3.metric("Evidencia directa", direct_count)
+        c4.metric("Fallback", fallback_count)
+        c5.metric("Coincidencias", len(matches))
+    if settings.public_demo_mode:
+        st.caption(
+            "Bundle de replay validado el 13/08/2026. El catálogo conservado no "
+            "incluye fechas de publicación ni de captura por artículo; se muestran N/D."
+        )
+    else:
+        st.caption(f"Evidencia oficial más reciente: {latest_display}.")
 
     if not news:
         st.info(
@@ -881,20 +925,25 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
             st.caption("QUÉ OCURRE")
             if matches:
                 st.write(
-                    f"{len(matches)} de {len(news)} publicaciones activan tus "
-                    "alertas actuales."
+                    f"{len(matches)} de {len(news)} "
+                    f"{'citas' if settings.public_demo_mode else 'publicaciones'} "
+                    "coinciden con la configuración de alertas."
                 )
             else:
                 st.write(
-                    f"Hay {len(news)} publicaciones en el radar y ninguna "
+                    f"Hay {len(news)} "
+                    f"{'citas' if settings.public_demo_mode else 'publicaciones'} "
+                    "en el radar y ninguna "
                     "coincidencia activa."
                 )
     with where_col:
         with st.container(border=True):
             st.caption("DÓNDE MIRAR")
+            focus_unit = "coincidencia" if snapshot["focus_count"] == 1 else "coincidencias"
             st.write(
                 f"{snapshot['focus_source']} concentra {snapshot['focus_count']} "
-                f"{'coincidencias' if matches else 'publicaciones'} del foco actual."
+                f"{focus_unit if matches else ('citas' if settings.public_demo_mode else 'publicaciones')} "
+                "del foco actual."
             )
     with next_col:
         with st.container(border=True):
@@ -902,17 +951,26 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
             next_focus = str(snapshot["next_focus"])
             st.write(next_focus if len(next_focus) <= 145 else f"{next_focus[:142]}…")
 
-    st.caption(
-        "Frescura de captura: "
-        f"{_format_timestamp(snapshot['latest_capture'])} · "
-        "Evidencia más reciente: "
-        f"{_format_timestamp(snapshot['latest_evidence'])}."
-    )
-    if snapshot["coverage_partial"]:
-        st.warning(
-            f"Cobertura parcial {snapshot['coverage_count']}/7. Sin evidencia en el "
-            "snapshot actual: " + ", ".join(snapshot["missing_sources"]) + "."
+    if not settings.public_demo_mode:
+        st.caption(
+            "Frescura de captura: "
+            f"{_format_timestamp(snapshot['latest_capture'])} · "
+            "Evidencia más reciente: "
+            f"{_format_timestamp(snapshot['latest_evidence'])}."
         )
+    if snapshot["coverage_partial"]:
+        if settings.public_demo_mode:
+            st.warning(
+                f"Catálogo conservado: {snapshot['coverage_count']}/7 organismos de "
+                "referencia. No representados en sus 34 citas: "
+                + ", ".join(snapshot["missing_sources"])
+                + ". El resumen histórico 53/7 se muestra por separado."
+            )
+        else:
+            st.warning(
+                f"Cobertura parcial {snapshot['coverage_count']}/7. Sin evidencia en el "
+                "snapshot actual: " + ", ".join(snapshot["missing_sources"]) + "."
+            )
 
     warnings = st.session_state.get("last_scrape_warnings") or []
     if warnings:
@@ -943,16 +1001,26 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
         ["Novedades", "Mis alertas", "Cobertura"]
     )
     with insight_tab:
-        frame = _news_frame(visible)
-        st.dataframe(
-            frame,
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "URL": st.column_config.LinkColumn("Fuente oficial", display_text="Abrir ↗"),
-                "Titular": st.column_config.TextColumn(width="large"),
-            },
-        )
+        if visible:
+            frame = _news_frame(visible)
+            st.dataframe(
+                frame,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "URL": st.column_config.LinkColumn(
+                        "Fuente oficial", display_text="Abrir ↗"
+                    ),
+                    "Titular": st.column_config.TextColumn(width="large"),
+                },
+            )
+        else:
+            filter_description = f" para «{query}»" if query else ""
+            st.info(
+                f"No hay {'citas' if settings.public_demo_mode else 'publicaciones'} "
+                f"que coincidan{filter_description} con "
+                "los filtros seleccionados."
+            )
     with alert_tab:
         if not alert_keywords:
             st.info("Configura al menos una alerta para ver coincidencias personalizadas.")
@@ -969,7 +1037,9 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
             [
                 {
                     "Organismo": source,
-                    "Publicaciones": sum(item.get("source") == source for item in news),
+                    ("Citas" if settings.public_demo_mode else "Publicaciones"): sum(
+                        item.get("source") == source for item in news
+                    ),
                     "Última captura": max(
                         (
                             item.get("fetched_at") or ""
@@ -985,24 +1055,64 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
         if not counts.empty:
             counts["Última captura"] = counts["Última captura"].map(_format_timestamp)
         st.dataframe(counts, hide_index=True, width="stretch")
-        st.caption(f"Registros obtenidos mediante fallback en vivo: {fallback_count}.")
+        if settings.public_demo_mode:
+            st.caption(
+                "Cobertura del catálogo conservado: 34 citas de 6 organismos. "
+                "La aceptación original registró, por separado, 53 publicaciones "
+                "y 7/7 fuentes recuperadas."
+            )
+        else:
+            st.caption(f"Registros obtenidos mediante fallback en vivo: {fallback_count}.")
 
 
-def render_alerts(database: Database, user: Mapping[str, Any]) -> None:
+def render_alerts(
+    settings: Settings,
+    database: Database,
+    user: Mapping[str, Any],
+) -> None:
     st.title("Alertas personalizadas")
-    st.caption("Cada regla pertenece al usuario autenticado y se aplica al corpus local.")
+    st.caption(
+        "Configuración UI simulada y no persistente; no forma parte de la evidencia histórica."
+        if settings.public_demo_mode
+        else "Cada regla pertenece al usuario autenticado y se aplica al corpus local."
+    )
+    if settings.public_demo_mode:
+        st.info(
+            "Vista de demostración en solo lectura. En el modo interactivo, cada "
+            "usuario puede crear, editar y eliminar sus propias reglas."
+        )
+        alerts = database.list_alerts(int(user["id"]))
+        for alert in alerts:
+            with st.container(border=True):
+                st.markdown(f"### {alert['name']}")
+                st.write("**Palabras clave:** " + " · ".join(alert["keywords"]))
+                st.write(
+                    "**Organismos:** "
+                    + (" · ".join(alert["sources"]) if alert["sources"] else "Todos")
+                )
+                st.caption("Activa" if alert["enabled"] else "Pausada")
+                st.caption(
+                    "SIMULACIÓN UI · Procedencia: replay-manifest.json · No es evidencia histórica"
+                )
+        return
     existing_sources = sorted(
         {item["source"] for item in database.list_news(limit=1000) if item.get("source")}
     ) or CANONICAL_SOURCES
 
     with st.form("new_alert_form", clear_on_submit=True):
         name = st.text_input("Nombre de la alerta", placeholder="Riesgos BESS y transmisión")
-        selected = st.multiselect("Palabras clave", ALERT_KEYWORDS)
+        selected = st.multiselect(
+            "Palabras clave",
+            ALERT_KEYWORDS,
+            placeholder="Selecciona uno o varios términos",
+        )
         custom = st.text_input(
             "Términos adicionales", placeholder="Separados por coma: capacidad, conexión"
         )
         sources = st.multiselect(
-            "Limitar a organismos (vacío = todos)", existing_sources
+            "Limitar a organismos (vacío = todos)",
+            existing_sources,
+            placeholder="Todos los organismos",
         )
         create = st.form_submit_button("Guardar alerta", type="primary")
     if create:
@@ -1079,7 +1189,15 @@ def render_alerts(database: Database, user: Mapping[str, Any]) -> None:
                 st.rerun()
 
 
-def _run_daily_report(user: Mapping[str, Any], database: Database) -> dict[str, Any]:
+def _run_daily_report(
+    settings: Settings, user: Mapping[str, Any], database: Database
+) -> dict[str, Any]:
+    if settings.public_demo_mode or getattr(database, "is_read_only_demo", False):
+        from core.demo import DemoReadOnlyError
+
+        raise DemoReadOnlyError(
+            "La generación de informes está bloqueada en el replay público"
+        )
     alerts = database.list_alerts(int(user["id"]), enabled_only=True)
     keywords = flatten_alert_keywords(alerts)
     agent = agent_service()
@@ -1089,32 +1207,77 @@ def _run_daily_report(user: Mapping[str, Any], database: Database) -> dict[str, 
     return normalize_report_result(result)
 
 
-def _render_report_downloads(report: Mapping[str, Any]) -> None:
+def build_report_exports(report: Mapping[str, Any]) -> tuple[bytes, bytes, str, str]:
+    """Construye exports autocontenidos y conserva la procedencia del replay."""
+
     content = str(report.get("report") or "")
     execution_id = str(report.get("execution_id") or "sin-id")
     safe_date = str(report.get("report_date") or business_today().isoformat())[:10]
+    is_replay = bool(report.get("evidence_replay")) or str(
+        report.get("artifact_kind") or ""
+    ) == "acceptance_artifact_replay"
+    provenance = {
+        "artifact_kind": (
+            "acceptance_artifact_replay" if is_replay else "live_execution"
+        ),
+        "evidence_replay": is_replay,
+        "evidence_origin": report.get("evidence_origin"),
+        "validated_at": report.get("validated_at"),
+        "origin_sha256": report.get("origin_sha256"),
+    }
+    metrics = dict(report.get("metrics") or {})
+    if is_replay:
+        metrics.update(
+            billing_mode="subscription",
+            cost_attribution="not_attributable",
+        )
     export_payload = {
+        "schema_version": 1,
+        **provenance,
         "report_id": report.get("report_id"),
         "execution_id": execution_id,
         "report_date": safe_date,
         "report": content,
         "citations": list(report.get("citations") or []),
         "evaluation": dict(report.get("evaluation") or report.get("judge") or {}),
-        "metrics": dict(report.get("metrics") or {}),
+        "metrics": metrics,
     }
+    markdown = content
+    if is_replay:
+        markdown = (
+            "<!-- artifact_kind: acceptance_artifact_replay -->\n"
+            "# Replay histórico de aceptación — no es una ejecución nueva\n\n"
+            f"- Validado: {provenance['validated_at'] or 'N/D'}\n"
+            f"- Origen: `{provenance['evidence_origin'] or 'N/D'}`\n"
+            f"- SHA-256 de origen: `{provenance['origin_sha256'] or 'N/D'}`\n\n"
+            "- Facturación: suscripción Codex; coste por llamada no atribuible "
+            "(N/A)\n\n"
+            "---\n\n"
+            f"{content}"
+        )
+    return (
+        markdown.encode("utf-8"),
+        json.dumps(export_payload, ensure_ascii=False, indent=2, default=str).encode(
+            "utf-8"
+        ),
+        safe_date,
+        execution_id,
+    )
+
+
+def _render_report_downloads(report: Mapping[str, Any]) -> None:
+    markdown, payload, safe_date, execution_id = build_report_exports(report)
     left, right = st.columns(2)
     left.download_button(
         "Descargar Markdown",
-        data=content.encode("utf-8"),
+        data=markdown,
         file_name=f"centinela-{safe_date}-{execution_id[:8]}.md",
         mime="text/markdown",
         width="stretch",
     )
     right.download_button(
         "Descargar JSON",
-        data=json.dumps(export_payload, ensure_ascii=False, indent=2, default=str).encode(
-            "utf-8"
-        ),
+        data=payload,
         file_name=f"centinela-{safe_date}-{execution_id[:8]}.json",
         mime="application/json",
         width="stretch",
@@ -1152,21 +1315,39 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
     st.caption(
         "Planner → Scraper → Executor → LLM-as-Judge. Cada afirmación material exige cita."
     )
-    runtime = provider_runtime_status(settings, "executor")
-    judge_runtime = provider_runtime_status(settings, "evaluator")
-    report_ready = bool(runtime["ready"] and judge_runtime["ready"])
-    if not runtime["ready"]:
-        st.warning(_provider_unavailable_message(runtime, "El informe generativo"))
-    if not judge_runtime["ready"]:
-        st.warning(
-            _provider_unavailable_message(
-                judge_runtime, "La barrera LLM-as-Judge"
-            )
+    if settings.public_demo_mode:
+        runtime = {"ready": False, "label": "Evidencia reproducida"}
+        judge_runtime = {"ready": False}
+        report_ready = False
+        st.info(
+            "Esta vista reproduce un informe generado y validado durante la "
+            "aceptación. No ejecuta un modelo nuevo ni consume cuota. Despliega "
+            "el modo interactivo y conecta Codex, OpenAI, Ollama o vLLM para "
+            "habilitar una ejecución en vivo."
         )
+    else:
+        runtime = provider_runtime_status(settings, "executor")
+        judge_runtime = provider_runtime_status(settings, "evaluator")
+        report_ready = bool(runtime["ready"] and judge_runtime["ready"])
+        if not runtime["ready"]:
+            st.warning(_provider_unavailable_message(runtime, "El informe generativo"))
+        if not judge_runtime["ready"]:
+            st.warning(
+                _provider_unavailable_message(
+                    judge_runtime, "La barrera LLM-as-Judge"
+                )
+            )
     alerts = database.list_alerts(int(user["id"]), enabled_only=True)
     keywords = flatten_alert_keywords(alerts)
     if keywords:
-        st.info("Prioridades de tus alertas: " + " · ".join(keywords))
+        st.info(
+            (
+                "Términos de la simulación UI: "
+                if settings.public_demo_mode
+                else "Prioridades de tus alertas: "
+            )
+            + " · ".join(keywords)
+        )
     else:
         st.info("Sin alertas activas: el agente cubrirá la taxonomía energética completa.")
 
@@ -1192,7 +1373,7 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
                     f"reporte {settings.model_for_role('executor')} · "
                     f"proveedor {runtime['label']}."
                 )
-                result = _run_daily_report(user, database)
+                result = _run_daily_report(settings, user, database)
                 st.session_state.latest_report = result
                 st.session_state.latest_report_user_id = int(user["id"])
                 quality = report_quality_status(result)
@@ -1267,9 +1448,18 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
             st.markdown(historical["content"])
             _render_report_downloads(
                 {
+                    "report_id": historical.get("id"),
                     "report": historical["content"],
                     "execution_id": historical.get("execution_id") or historical["id"],
+                    "report_date": historical.get("report_date"),
                     "citations": historical.get("citations") or [],
+                    "evaluation": metadata.get("judge") or {},
+                    "metrics": metadata.get("metrics") or {},
+                    "artifact_kind": metadata.get("artifact_kind"),
+                    "evidence_replay": metadata.get("evidence_replay"),
+                    "evidence_origin": metadata.get("evidence_origin"),
+                    "validated_at": metadata.get("validated_at"),
+                    "origin_sha256": metadata.get("origin_sha256"),
                 }
             )
             historical_judge = metadata.get("judge") or {}
@@ -1285,6 +1475,12 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
 
 
 def _index_local_news(engine: Any, database: Database) -> int:
+    if getattr(database, "is_read_only_demo", False):
+        from core.demo import DemoReadOnlyError
+
+        raise DemoReadOnlyError(
+            "La indexación está bloqueada en el replay público"
+        )
     news = database.list_news(limit=5000)
     if not news:
         return 0
@@ -1315,6 +1511,13 @@ def _ask_rag_observed(
     prompt: str,
 ) -> dict[str, Any]:
     """Ejecuta una pregunta con traza aislada y callback propio por usuario."""
+
+    if settings.public_demo_mode or getattr(database, "is_read_only_demo", False):
+        from core.demo import DemoReadOnlyError
+
+        raise DemoReadOnlyError(
+            "Las consultas generativas están bloqueadas en el replay público"
+        )
 
     from core.observability import CostTrackingCallback
     from rag.vector_engine import VectorEngine
@@ -1374,14 +1577,26 @@ def render_chat(
         "Recuperación trazable en ChromaDB y redacción multiproveedor; la respuesta "
         "conserva fuentes y URLs."
     )
-    runtime = provider_runtime_status(settings, "filter")
-    if not runtime["ready"]:
-        st.warning(_provider_unavailable_message(runtime, "El chat generativo"))
+    if settings.public_demo_mode:
+        runtime = {"ready": False}
+        st.info(
+            "La conversación visible es una captura RAG verificada con fuentes "
+            "oficiales. El cuadro de consulta permanece deshabilitado en este replay; "
+            "para consultar, despliega el modo interactivo y conecta un proveedor de IA."
+        )
+    else:
+        runtime = provider_runtime_status(settings, "filter")
+        if not runtime["ready"]:
+            st.warning(_provider_unavailable_message(runtime, "El chat generativo"))
     news_count = len(database.list_news(limit=5000))
     if not news_count:
         st.info("Actualiza primero las fuentes desde el Dashboard.")
         return
-    if st.button("Sincronizar índice", width="content"):
+    if st.button(
+        "Sincronizar índice",
+        width="content",
+        disabled=settings.public_demo_mode,
+    ):
         try:
             with st.spinner("Calculando embeddings de documentos nuevos…"):
                 indexed = _index_local_news(vector_service(), database)
@@ -1490,19 +1705,46 @@ def _billing_label(modes: set[str]) -> str:
     return "Sin llamada generativa"
 
 
+def _economic_cost_label(
+    modes: set[str],
+    *,
+    api_usd: float = 0.0,
+    api_clp: float = 0.0,
+    compute_usd: float | None = None,
+) -> str:
+    """Resume atribución económica sin usar ``None`` ni mezclar categorías."""
+
+    labels: list[str] = []
+    if "subscription" in modes:
+        labels.append("Codex N/A")
+    if {"api", "legacy_api"} & modes:
+        labels.append(f"API US${api_usd:,.6f} · CLP ${api_clp:,.2f}")
+    if "self_hosted" in modes:
+        labels.append(
+            f"Cómputo US${compute_usd:,.6f}"
+            if compute_usd is not None
+            else "Cómputo N/D"
+        )
+    return " · ".join(labels) or "N/D"
+
+
 def render_observability(database: Database, user: Mapping[str, Any]) -> None:
     st.title("Observabilidad y tokenomics")
     st.caption(
         "Tokens reportados por cada backend, coste API exacto y estimación de cómputo "
         "self-hosted separados por llamada, nodo y ejecución."
     )
-    all_executions = database.list_executions(limit=200)
     is_admin = bool(user.get("is_admin"))
-    executions = [
-        item
-        for item in all_executions
-        if is_admin or item.get("user_id") == int(user["id"])
-    ]
+    executions = database.list_executions(
+        limit=200,
+        user_id=None if is_admin else int(user["id"]),
+    )
+    if getattr(database, "is_read_only_demo", False):
+        st.info(
+            "Replay histórico: las cifras proceden de la traza de aceptación "
+            "conservada; esta visita no ejecuta modelos ni escribe telemetría. "
+            "La fila de ejecución usa tiempo de pared y el detalle, latencia por llamada."
+        )
     prompt_tokens = sum(int(item.get("prompt_tokens") or 0) for item in executions)
     completion_tokens = sum(int(item.get("completion_tokens") or 0) for item in executions)
     execution_views: list[dict[str, Any]] = []
@@ -1571,7 +1813,7 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
         "Llamadas generativas",
         f"{codex_calls + api_call_count + self_hosted_calls:,}",
     )
-    c4.metric("Coste API atribuible", f"US${api_cost_usd:,.6f}")
+    c4.metric("Coste API atribuible", f"US${api_cost_usd:,.4f}")
     st.caption(f"Conversión contractual: CLP ${api_cost_clp:,.2f} · 1 USD = 940 CLP.")
     if codex_calls:
         st.info(
@@ -1646,26 +1888,18 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
                 "Prompt": item.get("prompt_tokens"),
                 "Completion": item.get("completion_tokens"),
                 "Facturación": view["billing"],
-                "USD API atribuible": (
-                    view["api_usd"]
-                    if {"api", "legacy_api"} & view["modes"]
-                    else None
-                ),
-                "CLP API atribuible": (
-                    view["api_clp"]
-                    if {"api", "legacy_api"} & view["modes"]
-                    else None
-                ),
-                "USD cómputo estimado": (
-                    view["compute_usd"] if "self_hosted" in view["modes"] else None
-                ),
-                "Coste Codex": (
-                    "N/A · incluido en suscripción"
-                    if "subscription" in view["modes"]
-                    else "—"
+                "Atribución económica": _economic_cost_label(
+                    view["modes"],
+                    api_usd=view["api_usd"],
+                    api_clp=view["api_clp"],
+                    compute_usd=(
+                        view["compute_usd"]
+                        if view["compute_usd"] or "self_hosted" not in view["modes"]
+                        else None
+                    ),
                 ),
                 "Latencia (s)": item.get("latency_seconds"),
-                "ID": item.get("id"),
+                "Ejecución": str(item.get("id") or "")[:8],
             }
             for view in execution_views
             for item in [view["execution"]]
@@ -1699,28 +1933,24 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
                         "Facturación": _billing_label({_billing_mode(call)}),
                         "Prompt": call.get("prompt_tokens"),
                         "Completion": call.get("completion_tokens"),
-                        "USD API atribuible": (
-                            call.get("cost_usd")
-                            if _billing_mode(call) in {"api", "legacy_api"}
-                            else None
-                        ),
-                        "CLP API atribuible": (
-                            call.get("cost_clp")
-                            if _billing_mode(call) in {"api", "legacy_api"}
-                            else None
-                        ),
-                        "USD cómputo estimado": (
-                            (call.get("metadata") or {}).get(
-                                "estimated_compute_cost_usd"
-                            )
-                            if _billing_mode(call) == "self_hosted"
-                            and isinstance(call.get("metadata"), Mapping)
-                            else None
-                        ),
-                        "Coste Codex": (
-                            "N/A · suscripción"
-                            if _billing_mode(call) == "subscription"
-                            else "—"
+                        "Atribución económica": _economic_cost_label(
+                            {_billing_mode(call)},
+                            api_usd=float(call.get("cost_usd") or 0),
+                            api_clp=float(call.get("cost_clp") or 0),
+                            compute_usd=(
+                                float(
+                                    (call.get("metadata") or {}).get(
+                                        "estimated_compute_cost_usd"
+                                    )
+                                )
+                                if _billing_mode(call) == "self_hosted"
+                                and isinstance(call.get("metadata"), Mapping)
+                                and (
+                                    call.get("metadata") or {}
+                                ).get("estimated_compute_cost_usd")
+                                is not None
+                                else None
+                            ),
                         ),
                         "Latencia (s)": call.get("latency_seconds"),
                     }
@@ -1739,25 +1969,27 @@ def render_architecture(settings: Settings) -> None:
         """
 ```mermaid
 flowchart LR
-    U[Usuario o scheduler] --> A[Planner · routing barato / fallback]
-    P[Provider Factory] --> X[Codex / OpenAI / Ollama / vLLM]
-    A --> B[Scraper · fuentes oficiales]
-    B --> C[Executor · modelo por rol]
-    C --> D[Judge · modelo por rol]
-    D --> E[END]
-    B --> V[(ChromaDB · embeddings configurables)]
-    V --> R[Chat RAG]
-    B --> Q[(SQLite)]
-    X --> C
-    X --> D
-    X --> R
-    C --> O[Tokens · coste API · cómputo separado]
-    D --> O
+    U[Usuario / scheduler] --> G[LangGraph: Planner → Scraper → Executor → Judge]
+    G --> I[Informe citado y evaluado]
+    G --> D[(SQLite + ChromaDB)]
+    D --> R[Chat RAG trazable]
+    F[Provider Factory: Codex · OpenAI · Ollama · vLLM] --> G
+    F --> R
+    G --> O[Tokens · latencia · costes]
     R --> O
 ```
 """
     )
-    st.subheader("Model routing efectivo")
+    st.subheader(
+        "Routing compatible (no ejecutado en este replay)"
+        if settings.public_demo_mode
+        else "Model routing efectivo"
+    )
+    if settings.public_demo_mode:
+        st.info(
+            "La tabla describe la configuración portable de CENtinela. El replay "
+            "solo presenta una ejecución histórica y no contacta ningún proveedor."
+        )
     st.dataframe(
         pd.DataFrame(
             [
@@ -1827,6 +2059,7 @@ def _inject_styles() -> None:
   [data-testid="stMetric"] { background: #fff; border: 1px solid #dce9e2; border-radius: 14px; padding: 1rem; }
   [data-testid="stSidebar"] { border-right: 1px solid #dce9e2; }
   .stButton > button[kind="primary"] { font-weight: 700; }
+  [data-testid="stHeaderActionElements"] a[aria-label^="Link to heading"] { display: none !important; }
   [data-testid="stAppDeployButton"], .stAppDeployButton, #MainMenu, footer { display: none !important; }
 </style>
 """,
@@ -1842,23 +2075,60 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
     _inject_styles()
-    settings, database = services()
+    settings = get_settings()
+    if settings.public_demo_mode:
+        from core.demo import (
+            demo_rag_messages,
+            demo_report_payload,
+            get_demo_repository,
+        )
+
+        database = get_demo_repository()
+    else:
+        settings, database = services()
     logging.basicConfig(
         level=getattr(logging, settings.log_level),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    if settings.public_demo_mode and not st.session_state.get("demo_initialized"):
+        demo_user = {
+            "id": 0,
+            "username": "public-replay",
+            "is_admin": False,
+            "is_active": True,
+        }
+        _set_user(demo_user)
+        st.session_state.latest_report = demo_report_payload()
+        st.session_state.latest_report_user_id = 0
+        st.session_state.rag_messages = demo_rag_messages()
+        st.session_state.demo_initialized = True
     if "user" not in st.session_state:
         render_auth(database)
         return
     user = st.session_state.user
-    runtime = provider_runtime_status(settings, "executor")
+    runtime = (
+        {"ready": False, "provider": "demo", "label": "Replay validado"}
+        if settings.public_demo_mode
+        else provider_runtime_status(settings, "executor")
+    )
     with st.sidebar:
         st.markdown("## CEN<span style='color:#24a660'>tinela</span>", unsafe_allow_html=True)
         st.caption("SEN · Chile")
         st.divider()
-        st.markdown(f"**{user['username']}**")
-        st.caption("Administrador" if user.get("is_admin") else "Analista")
-        if runtime["ready"]:
+        st.markdown(
+            "**Invitado de demostración**"
+            if settings.public_demo_mode
+            else f"**{user['username']}**"
+        )
+        st.caption(
+            "Solo lectura · sin persistencia por visitante"
+            if settings.public_demo_mode
+            else ("Administrador" if user.get("is_admin") else "Analista")
+        )
+        if settings.public_demo_mode:
+            st.success("Demo pública · evidencia lista", icon="✅")
+            st.caption("Replay inmutable; no introduzcas información sensible.")
+        elif runtime["ready"]:
             st.success(f"{runtime['label']} · listo", icon="✅")
         elif runtime["provider"] == "codex" and runtime["reason"] == "api_key_auth_not_allowed":
             st.error("Codex con API key · sesión rechazada", icon="⛔")
@@ -1881,16 +2151,35 @@ def main() -> None:
             label_visibility="collapsed",
         )
         st.divider()
-        if st.button("Cerrar sesión", width="stretch"):
+        if settings.public_demo_mode:
+            if st.button("Reiniciar vista", width="stretch"):
+                _set_user(None)
+                for key in (
+                    "demo_initialized",
+                    "latest_report",
+                    "latest_report_user_id",
+                    "rag_messages",
+                ):
+                    st.session_state.pop(key, None)
+                st.rerun()
+        elif st.button("Cerrar sesión", width="stretch"):
             _set_user(None)
             st.rerun()
+
+    if settings.public_demo_mode:
+        st.warning(
+            "**Replay público:** informe, RAG y telemetría son artefactos históricos; "
+            "la alerta está marcada como simulación UI. No es una ejecución nueva. "
+            "Las acciones con efectos laterales y las llamadas a modelos están "
+            "bloqueadas; no se inicializa SQLite ni se crean rutas de runtime."
+        )
 
     if page == "Dashboard":
         render_dashboard(settings, database, user)
     elif page == "Informe diario":
         render_report(settings, database, user)
     elif page == "Alertas":
-        render_alerts(database, user)
+        render_alerts(settings, database, user)
     elif page == "Chat RAG":
         render_chat(settings, database, user)
     elif page == "Observabilidad":

@@ -4,6 +4,7 @@ import pytest
 
 from app import (
     _billing_mode,
+    _economic_cost_label,
     _execution_display_status,
     _format_timestamp,
     _index_local_news,
@@ -165,6 +166,15 @@ def test_billing_mode_prefers_codex_subscription_metadata() -> None:
     assert _billing_mode({"model": "legacy-api-model", "cost_usd": 0.01}) == (
         "legacy_api"
     )
+
+
+def test_economic_cost_label_keeps_billing_categories_separate() -> None:
+    assert _economic_cost_label({"subscription"}) == "Codex N/A"
+    assert "US$0.010000" in _economic_cost_label(
+        {"api"}, api_usd=0.01, api_clp=9.4
+    )
+    assert _economic_cost_label({"self_hosted"}) == "Cómputo N/D"
+    assert _economic_cost_label(set()) == "N/D"
 
 
 def test_subscription_imputation_is_separate_and_deterministic() -> None:

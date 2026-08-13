@@ -132,11 +132,16 @@ CENtinela/
 ├── rag/vector_engine.py
 ├── tests/
 ├── docs/demo/
+├── .streamlit/secrets.example.toml
+├── packages.txt
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-compose.ollama.yml
 ├── docker-compose.ollama-gpu.yml
 ├── CLOUD_ARCHITECTURE.md
+├── GUION_DEMO.md
+├── DEFENSA_CTO.md
+├── CHECKLIST_ENTREGA.md
 ├── DECISIONES_TECNICAS.md
 └── SECURITY.md
 ```
@@ -195,6 +200,37 @@ y escritura denegadas para los comandos que pudiera proponer el modelo.
 Codex es apropiado para esta evaluación, pero una sesión humana no es la
 identidad recomendada para réplicas cloud desatendidas. En cloud debe elegirse
 OpenAI API o un gateway privado vLLM, con una identidad de servicio gestionada.
+
+## Demo pública sin credenciales
+
+Streamlit Community Cloud puede publicar un **replay de artefactos de
+aceptación** sin copiar la sesión Codex ni guardar una API key. El modo
+`PUBLIC_DEMO_MODE=true` carga en memoria el catálogo de citas, el informe, el
+dictamen, la consulta RAG y la traza conservada en `docs/demo/`. No inicializa
+SQLite ni rutas de runtime, no crea identidades por visitante y bloquea en
+servidor scraping, indexación y llamadas generativas. La integridad del bundle
+se comprueba con SHA-256 antes de renderizarlo.
+
+El replay distingue lo que se conserva de lo que solo acredita el resumen
+histórico: el catálogo contiene 34 citas de 6 organismos y carece de fechas por
+artículo y método de captura; la aceptación original registró por separado 53
+publicaciones y 7/7 fuentes recuperadas. La UI muestra esos campos como N/D y
+nunca fabrica la fila o las fechas que faltan. La regla de alerta es una
+configuración UI simulada declarada en el manifest, no evidencia histórica.
+
+1. En Streamlit Community Cloud, crea una app desde este repositorio, rama
+   `main`, fichero `app.py`.
+2. Copia el contenido de
+   [`.streamlit/secrets.example.toml`](.streamlit/secrets.example.toml) en
+   **Advanced settings → Secrets** y selecciona Python 3.12 en la configuración
+   del runtime.
+3. Despliega y verifica todas las vistas. `packages.txt` instala la única
+   dependencia de sistema adicional.
+
+El proceso no persiste actividad de los visitantes. No introduzcas datos
+personales o internos. Este modo rechaza credenciales bootstrap y secretos de
+proveedores, y no se permite con `APP_ENV=production`; un servicio real requiere
+OpenAI o vLLM, SSO, persistencia gestionada, rate limiting y un secret manager.
 
 ## Docker con Ollama
 
@@ -267,6 +303,7 @@ el mismo modelo en todos los roles o despliega endpoints separados.
 | Variable | Default | Propósito |
 |---|---|---|
 | `AI_PROVIDER` | `codex` | `codex`, `openai`, `ollama` o `vllm` |
+| `PUBLIC_DEMO_MODE` | `false` | replay público sin credenciales ni llamadas nuevas |
 | `EMBEDDING_PROVIDER` | `local_hash` | espacio vectorial independiente |
 | `*_PROVIDER` | vacío | override opcional por rol |
 | `PROVIDER_TIMEOUT_SECONDS` | `240` | timeout de inferencia HTTP |
@@ -336,8 +373,23 @@ del MVP no sustituye SSO/OIDC, RBAC ni un secret manager de producción.
 7. En **Arquitectura**, verifica el routing efectivo de ese despliegue.
 
 `docs/demo/` conserva capturas y artefactos de una ejecución Codex real de
-aceptación. Son evidencia estática para revisar la interfaz sin consumir cuota;
-no incluyen SQLite, usuarios, contraseñas, índices ni credenciales.
+aceptación. Permiten reproducir las pantallas y revisar salidas, citas y trazas
+sin consumir cuota; no equivalen a reejecutar la cadena de captura porque el
+corpus y sus extractos no forman parte del paquete. Tampoco incluyen SQLite,
+usuarios, contraseñas, índices ni credenciales.
+
+## Presentación y entrega
+
+- [`GUION_DEMO.md`](GUION_DEMO.md) contiene el recorrido cronometrado de siete
+  minutos, preflight, mensajes exactos y Plan B sin servicios externos.
+- [`DEFENSA_CTO.md`](DEFENSA_CTO.md) desarrolla la narrativa de arquitectura,
+  límites, economía y respuestas a preguntas difíciles.
+- [`CHECKLIST_ENTREGA.md`](CHECKLIST_ENTREGA.md) define los gates de calidad,
+  seguridad, release y envío al evaluador.
+
+Los tres documentos son complementarios: la demo enseña evidencia, la defensa
+explica decisiones y el checklist impide etiquetar una versión que no haya sido
+verificada.
 
 ## Pruebas
 
