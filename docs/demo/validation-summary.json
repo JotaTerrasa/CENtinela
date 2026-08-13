@@ -1,0 +1,87 @@
+{
+  "validated_at": "2026-08-13",
+  "environment": {
+    "delivery": "Docker Compose",
+    "health_endpoint": "ok",
+    "codex_cli_version": "0.144.4",
+    "authentication": "ChatGPT",
+    "chroma_version": "0.6.3",
+    "read_only_rootfs": true,
+    "capabilities_dropped": "ALL",
+    "no_new_privileges": true,
+    "pids_limit": 256,
+    "persistent_volume_write_test": "passed"
+  },
+  "automated_checks": {
+    "tests_passed": 88,
+    "tests_failed": 0,
+    "compileall": "passed",
+    "pip_check": "passed",
+    "docker_compose_config": "passed",
+    "git_diff_check": "passed"
+  },
+  "live_sources": {
+    "expected": 7,
+    "recovered": 7,
+    "errors": 0,
+    "publications_in_dashboard": 53
+  },
+  "daily_report": {
+    "execution_id": "76dbc034-963f-4c01-9af0-cb7dfe064d6a",
+    "report_id": "075d35ed-cf15-4724-8834-c76fc9eafa45",
+    "status": "completed",
+    "mode": "llm",
+    "judge": {
+      "approved": true,
+      "score": 78,
+      "relevance": 86,
+      "coverage": 72,
+      "clarity": 91,
+      "traceability": 70,
+      "deterministic_valid": true,
+      "missing_citation_lines": [],
+      "unknown_citations": []
+    },
+    "evidence": {
+      "sources_recovered": 7,
+      "documents_in_window": 34,
+      "documents_outside_window": 16,
+      "citation_catalog_entries": 34
+    },
+    "telemetry": {
+      "calls": 2,
+      "prompt_tokens": 35203,
+      "completion_tokens": 3702,
+      "total_tokens": 38905,
+      "elapsed_seconds": 77.9,
+      "cost_attribution": "not_attributable",
+      "cost_usd": 0.0,
+      "cost_clp": 0.0
+    }
+  },
+  "rag": {
+    "execution_id": "221ed6a0-7819-4d12-9fd7-b668ae576967",
+    "status": "completed",
+    "mode": "local_vector+llm",
+    "named_sources_present": ["CNE", "SEA"],
+    "prompt_tokens": 12463,
+    "completion_tokens": 229,
+    "total_tokens": 12692,
+    "elapsed_seconds": 8.81,
+    "cost_attribution": "not_attributable"
+  },
+  "frontend_rag_recheck": {
+    "validated_at": "2026-08-13T14:54:00Z",
+    "question": "¿Qué informan la CNE y el SEA sobre subestaciones digitales y proyectos evaluados en Coquimbo?",
+    "named_sources_present": ["CNE", "SEA"],
+    "citation_links_visible": true,
+    "screenshot": "screenshots/06-chat-rag.png"
+  },
+  "security_canary": {
+    "forced_login_method": "chatgpt",
+    "permission_profile": "centinela_runtime",
+    "repository_readable_by_model_tools": false,
+    "codex_auth_readable_by_model_tools": false,
+    "network_available_to_model_tools": false
+  }
+}

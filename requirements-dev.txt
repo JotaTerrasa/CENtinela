@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# CVE-2025-71176 queda corregido a partir de pytest 9.0.3.
+pytest==9.0.3

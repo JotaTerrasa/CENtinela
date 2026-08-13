@@ -1,0 +1,30 @@
+services:
+  centinela:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8501:8501"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    volumes:
+      - centinela-data:/app/data
+      # Chroma 0.6.3 no abre de forma segura un indice creado por 1.5.x.
+      # El volumen separado conserva intacto cualquier indice legacy oculto
+      # bajo centinela-data y permite reconstruir el indice desde SQLite.
+      - centinela-chroma-v063:/app/data/chroma
+      - centinela-reports:/app/reports
+      - centinela-codex-auth:/home/centinela/.codex
+    restart: unless-stopped
+
+volumes:
+  centinela-data:
+  centinela-chroma-v063:
+  centinela-reports:
+  centinela-codex-auth:

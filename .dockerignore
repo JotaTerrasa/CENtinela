@@ -1,0 +1,24 @@
+.git
+.github
+.env
+.env.*
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.coverage
+htmlcov
+work
+# La imagen de runtime no incluye la suite ni su manifiesto de desarrollo.
+tests
+requirements-dev.txt
+data/*
+!data/chroma
+data/chroma/*
+!data/chroma/.gitkeep
+reports/*
+!reports/.gitkeep
+*.db
+*.db-*
+*.sqlite
+*.sqlite3

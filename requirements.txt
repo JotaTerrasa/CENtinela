@@ -1,0 +1,18 @@
+streamlit==1.61.1
+pandas==2.3.3
+pydantic==2.13.4
+pydantic-settings==2.15.0
+langchain-core==1.5.4
+langgraph==1.2.11
+# 0.6.3 conserva PersistentClient y queda fuera del rango vulnerable
+# >=1.0.0,<=1.5.9 de CVE-2026-45829. Chroma no se expone como servidor.
+chromadb==0.6.3
+# Chroma 0.6.3 usa la firma positional de capture; PostHog >=6 la rompio.
+# La telemetria se desactiva tambien al construir PersistentClient.
+posthog==5.4.0
+openai-codex==0.144.4
+requests==2.34.2
+beautifulsoup4==4.15.0
+feedparser==6.0.14
+python-dateutil==2.9.0.post0
+tenacity==9.1.4

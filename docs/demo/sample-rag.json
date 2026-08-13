@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-08-13T14:54:00Z",
+  "question": "¿Qué informan la CNE y el SEA sobre subestaciones digitales y proyectos evaluados en Coquimbo?",
+  "answer": [
+    {
+      "text": "La CNE informa sobre innovación y regulación asociadas a las subestaciones digitales y la red eléctrica del futuro.",
+      "citation": {
+        "source": "Comisión Nacional de Energía (CNE)",
+        "url": "https://www.cne.cl/prensa/prensa-2026/08-agosto-2026/subestaciones-digitales-innovacion-y-regulacion-para-la-red-del-futuro/"
+      }
+    },
+    {
+      "text": "El SEA destaca la evaluación de proyectos por más de 3 mil millones de dólares en la región de Coquimbo.",
+      "citation": {
+        "source": "Servicio de Evaluación Ambiental (SEA)",
+        "url": "https://www.sea.gob.cl/noticias/director-ejecutivo-del-sea-destaca-evaluacion-de-proyectos-por-mas-de-3-mil-millones-de"
+      }
+    }
+  ],
+  "retrieval": {
+    "mode": "local_vector+llm",
+    "top_k": 5,
+    "source_diversity_verified": ["CNE", "SEA"]
+  },
+  "telemetry": {
+    "model": "gpt-5.6-luna",
+    "calls": 1,
+    "prompt_tokens": 12463,
+    "completion_tokens": 229,
+    "total_tokens": 12692,
+    "elapsed_seconds": 8.81,
+    "cost_attribution": "not_attributable",
+    "cost_usd": 0.0,
+    "cost_clp": 0.0
+  }
+}
