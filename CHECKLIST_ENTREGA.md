@@ -4,22 +4,27 @@ Runbook de cierre para publicar y enviar CENtinela sin confundir un artefacto
 validado con una promesa de producción. Los checks se completan en orden: un
 gate fallido detiene el etiquetado de la release.
 
+Las casillas de este archivo son un procedimiento reutilizable, no el estado de
+la última ejecución. El cumplimiento funcional vigente se consulta en
+[`MATRIZ_CUMPLIMIENTO.md`](MATRIZ_CUMPLIMIENTO.md), y la evidencia concreta de
+cada versión en su release de GitHub.
+
 ## Estado auditado de partida
 
-Auditoría realizada el 13 de agosto de 2026 sobre el repositorio público
+Auditoría actualizada el 14 de agosto de 2026 sobre el repositorio público
 [`JotaTerrasa/CENtinela`](https://github.com/JotaTerrasa/CENtinela):
 
 | Evidencia | Estado observado | Referencia |
 |---|---|---|
 | PR multi-provider | Fusionada | [PR #1](https://github.com/JotaTerrasa/CENtinela/pull/1) |
-| Baseline de `main` | `72fb23e7d593094e231a702c4931e417703eee15` | [commit](https://github.com/JotaTerrasa/CENtinela/commit/72fb23e7d593094e231a702c4931e417703eee15) |
-| CI de la fusión | Correcta | [run 31743116440](https://github.com/JotaTerrasa/CENtinela/actions/runs/31743116440) |
-| Release GitHub | No existía al iniciar esta auditoría | Debe crearse después del último commit documental |
+| Release base | Publicada e inmutable | [v1.0.0](https://github.com/JotaTerrasa/CENtinela/releases/tag/v1.0.0) |
+| Ajuste de demo cloud | Fusionado | [PR #3](https://github.com/JotaTerrasa/CENtinela/pull/3) |
+| Release de cierre documental | Objetivo de este runbook | `v1.0.1`, creada únicamente desde el `main` final con CI verde |
 | Evidencia de interfaz | Disponible | [`docs/demo/`](docs/demo/README.md) |
 
-La release final debe señalar a un commit que contenga también
-[`GUION_DEMO.md`](GUION_DEMO.md) y este checklist; por tanto, será descendiente
-del baseline, no necesariamente el propio `72fb23e`.
+La release final debe señalar a un commit que contenga también los diagramas,
+el stack consolidado, la matriz de cumplimiento, [`GUION_DEMO.md`](GUION_DEMO.md)
+y este checklist. El tag existente `v1.0.0` no se mueve ni se sobrescribe.
 
 ## Gate 1 · Alcance y repositorio
 
@@ -141,7 +146,7 @@ terceros.
 - [ ] No quedan notificaciones, pestañas personales o terminales con secretos.
 - [ ] El cierre distingue claramente MVP validado de roadmap productivo.
 
-## Gate 6 · Release `v1.0.0`
+## Gate 6 · Release `v1.0.1`
 
 Crear la release solo después de que el commit final esté en `main` y su CI esté
 en verde.
@@ -150,14 +155,14 @@ en verde.
 git switch main
 git pull --ff-only origin main
 git status --short
-git tag --list v1.0.0
+git tag --list v1.0.1
 gh run list --repo JotaTerrasa/CENtinela --branch main --limit 3
 ```
 
 - [ ] `git status` está limpio.
 - [ ] `HEAD` coincide con el commit verde de `origin/main`.
-- [ ] El tag `v1.0.0` no existe antes de crearlo.
-- [ ] El título es `CENtinela v1.0.0 — MVP de inteligencia regulatoria`.
+- [ ] El tag `v1.0.1` no existe antes de crearlo.
+- [ ] El título es `CENtinela v1.0.1 — arquitectura y documentación de entrega`.
 - [ ] La release no contiene bases de datos, credenciales, volúmenes ni índices.
 - [ ] Se adjunta, si se distribuye un ZIP manual, su SHA-256.
 - [ ] La release enlaza README, guía de demo, defensa, arquitectura cloud,
@@ -174,14 +179,14 @@ Texto breve recomendado para la release:
 > de servicio, PostgreSQL, workers, secret manager y auditoría centralizada.
 
 Enlace esperado tras la publicación:
-<https://github.com/JotaTerrasa/CENtinela/releases/tag/v1.0.0>.
+<https://github.com/JotaTerrasa/CENtinela/releases/tag/v1.0.1>.
 
 ## Paquete que recibe el evaluador
 
 El mensaje de entrega debe contener únicamente:
 
 1. Repositorio: <https://github.com/JotaTerrasa/CENtinela>.
-2. Release versionada: <https://github.com/JotaTerrasa/CENtinela/releases/tag/v1.0.0>.
+2. Release versionada: <https://github.com/JotaTerrasa/CENtinela/releases/tag/v1.0.1>.
 3. Instrucción de arranque: sección Docker del README.
 4. Guion o vídeo de demo, si el canal de entrega lo admite.
 5. Una frase de alcance: MVP ejecutable y trazable, no plataforma HA ni
@@ -205,7 +210,7 @@ solo es necesario si la convocatoria lo exige.
 > Repositorio: https://github.com/JotaTerrasa/CENtinela
 >
 > Release reproducible:
-> https://github.com/JotaTerrasa/CENtinela/releases/tag/v1.0.0
+> https://github.com/JotaTerrasa/CENtinela/releases/tag/v1.0.1
 >
 > La solución incluye instrucciones Docker, pruebas automatizadas, evidencia de
 > una ejecución validada y una propuesta de evolución cloud con OpenAI, Ollama

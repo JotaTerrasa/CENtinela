@@ -17,6 +17,18 @@ predeterminado y validado de la entrega; Ollama ofrece una réplica local sin AP
 key y vLLM constituye la ruta recomendada para inferencia privada con GPU en
 cloud.
 
+## Documentación ejecutiva
+
+| Documento | Pregunta que responde |
+|---|---|
+| [ARQUITECTURA.md](ARQUITECTURA.md) | ¿Cómo funciona el sistema, dónde están las fronteras de confianza y cómo evoluciona a producción? |
+| [STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md) | ¿Qué tecnologías, versiones, modelos, protocolos y herramientas componen la solución? |
+| [MATRIZ_CUMPLIMIENTO.md](MATRIZ_CUMPLIMIENTO.md) | ¿Dónde se demuestra cada requisito del enunciado y qué límites permanecen abiertos? |
+| [DECISIONES_TECNICAS.md](DECISIONES_TECNICAS.md) | ¿Qué trade-offs se aceptaron y por qué? |
+| [CLOUD_ARCHITECTURE.md](CLOUD_ARCHITECTURE.md) | ¿Cómo operar modelos abiertos y una topología cloud privada? |
+| [SECURITY.md](SECURITY.md) | ¿Qué amenazas, controles y deudas de seguridad existen? |
+| [AI_USAGE.md](AI_USAGE.md) | ¿Qué IA se utilizó durante el desarrollo y dentro del producto? |
+
 ## Capacidades
 
 - Login propio con PBKDF2-HMAC-SHA256 y sal individual.
@@ -36,37 +48,64 @@ cloud.
 - Coste API, suscripción Codex y cómputo self-hosted diferenciados.
 - Docker endurecido y perfiles reproducibles para Codex y Ollama.
 
-## Arquitectura
+## Stack tecnológico
+
+El inventario consolidado, con versiones fijadas, propósito, justificación y
+alternativa productiva, está en
+[STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md). Esta es la vista ejecutiva:
+
+| Capa | Tecnología implementada | Responsabilidad |
+|---|---|---|
+| Runtime | Python 3.12 | Dominio, orquestación, RAG, captura y UI en un monolito modular |
+| Experiencia | Streamlit 1.61.1 y Pandas 2.3.3 | Login, dashboard, alertas, informes, chat y observabilidad |
+| Agente | LangGraph 1.2.11, LangChain Core 1.5.4 y Pydantic 2.13.4 | Estado tipado, Planner-Executor, contratos y LLM-as-Judge |
+| Inferencia | Codex, OpenAI Responses API, Ollama o vLLM | Routing por rol sin cambiar la topología ni el contrato de evidencia |
+| RAG | ChromaDB 0.6.3 y embeddings hash/OpenAI-compatible | Indexación, recuperación y metadata de procedencia |
+| Datos | SQLite, Chroma persistente y reportes Markdown/JSON | Usuarios, noticias, alertas, memoria, trazas e informes |
+| Captura | Requests, Beautiful Soup, Feedparser y `urllib3 Retry` | HTML, RSS, sitemap, límites y recuperación resiliente |
+| Observabilidad | Callback LangChain y tablas SQLite | Tokens exactos reportados, latencia, estado y coste USD/CLP |
+| Seguridad | PBKDF2-HMAC-SHA256, `SecretStr` y Docker endurecido | Identidad MVP, protección de secretos y mínimo privilegio |
+| Entrega | Docker Compose, GitHub Actions y Streamlit Community Cloud | Réplica interactiva, CI y replay público de solo lectura |
+| Calidad | Pytest, Ruff y pip-audit | Contratos, regresión, estilo y dependencias vulnerables |
+
+## Arquitectura ejecutiva
 
 ```mermaid
-flowchart LR
-    U["Usuario o scheduler"] --> UI["Streamlit"]
-    UI --> DB[("SQLite · MVP")]
-    UI --> G["LangGraph"]
-    G --> P["Planner · modelo barato / fallback"]
-    P --> S["Scrapers oficiales"]
-    S --> E["Executor"]
-    E --> J["LLM-as-Judge"]
-    J --> DB
-    S --> V[("ChromaDB")]
-    V --> R["Chat RAG"]
-    E --> F["Provider factory"]
-    J --> F
-    R --> F
-    P --> F
-    S --> F
-    F --> C["Codex CLI"]
-    F --> O["OpenAI Responses"]
-    F --> L["Ollama Chat Completions"]
-    F --> X["vLLM / gateway compatible"]
-    F --> T["Tokens · latencia · coste"]
-    T --> DB
+flowchart TB
+    USER["Analista regulatorio"]:::actor --> UI["Streamlit<br/>Dashboard · Alertas · Informe · RAG"]:::implemented
+
+    subgraph DOMAIN["CENtinela · monolito modular implementado"]
+        UI --> GRAPH["LangGraph<br/>Planner → Scraper → Executor → Judge"]:::implemented
+        UI --> RAG["Motor RAG trazable"]:::implemented
+        GRAPH --> VALID["Barrera determinista<br/>IDs, citas y URLs permitidas"]:::control
+        RAG --> VALID
+        GRAPH --> FACTORY["Provider Factory por rol"]:::implemented
+        RAG --> FACTORY
+        GRAPH --> OBS["Tokens · latencia · USD/CLP"]:::implemented
+    end
+
+    GRAPH --> SOURCES["7 fuentes oficiales chilenas"]:::external
+    FACTORY --> MODELS["Codex · OpenAI · Ollama · vLLM"]:::external
+    GRAPH --> DATA[("SQLite · ChromaDB · reportes")]:::store
+    RAG --> DATA
+    OBS --> DATA
+    VALID --> UI
+
+    classDef actor fill:#eef4ff,stroke:#315b96,color:#17365d;
+    classDef implemented fill:#e8f6ee,stroke:#137a4a,color:#0c3330,stroke-width:1.5px;
+    classDef control fill:#f2ecff,stroke:#6b46c1,color:#35205f,stroke-width:1.5px;
+    classDef store fill:#e9f3ff,stroke:#2563a5,color:#123b64,stroke-width:1.5px;
+    classDef external fill:#fff7e6,stroke:#b7791f,color:#5f3b00;
 ```
 
 La topología del agente no cambia al cambiar de modelo. Executor y Judge solo
 reciben un catálogo acotado de documentos. Tras cada salida se ejecuta una
 barrera determinista de citas; un fallo del Judge deja el informe rechazado y
 no lo guarda como memoria válida.
+
+[ARQUITECTURA.md](ARQUITECTURA.md) amplía esta vista con contexto de sistema,
+componentes, secuencia del informe, lineage RAG, tokenomics, despliegues actuales
+y arquitectura objetivo de producción con fronteras de confianza.
 
 ## Modos de IA
 
@@ -143,6 +182,9 @@ CENtinela/
 ├── docker-compose.yml
 ├── docker-compose.ollama.yml
 ├── docker-compose.ollama-gpu.yml
+├── ARQUITECTURA.md
+├── STACK_TECNOLOGICO.md
+├── MATRIZ_CUMPLIMIENTO.md
 ├── CLOUD_ARCHITECTURE.md
 ├── GUION_DEMO.md
 ├── DEFENSA_CTO.md
@@ -287,7 +329,9 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 
 OpenAI utiliza Responses API con `store=false`. Las salidas estructuradas usan
 JSON Schema. `gpt-4o-mini` cubre planificación, filtrado, RAG y Judge; `gpt-4o`
-redacta el informe final, como exige el enunciado de la prueba.
+redacta el informe final según el requisito de routing fijado para esta entrega.
+Este routing es una decisión de implementación adicional; no se atribuye al PDF
+oficial de Grenergy.
 
 ## vLLM / endpoint compatible
 
@@ -393,6 +437,10 @@ usuarios, contraseñas, índices ni credenciales.
   límites, economía y respuestas a preguntas difíciles.
 - [`CHECKLIST_ENTREGA.md`](CHECKLIST_ENTREGA.md) define los gates de calidad,
   seguridad, release y envío al evaluador.
+- [`ARQUITECTURA.md`](ARQUITECTURA.md),
+  [`STACK_TECNOLOGICO.md`](STACK_TECNOLOGICO.md) y
+  [`MATRIZ_CUMPLIMIENTO.md`](MATRIZ_CUMPLIMIENTO.md) forman el dossier técnico
+  trazable contra el enunciado.
 
 Los tres documentos son complementarios: la demo enseña evidencia, la defensa
 explica decisiones y el checklist impide etiquetar una versión que no haya sido

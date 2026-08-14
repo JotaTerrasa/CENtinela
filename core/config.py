@@ -87,8 +87,9 @@ DEFAULT_MODEL_PRICING: dict[str, dict[str, float]] = {
     "gpt-5.6-luna": {"input_per_million": 0.0, "output_per_million": 0.0},
     "gpt-5.6-terra": {"input_per_million": 0.0, "output_per_million": 0.0},
     "gpt-5.6-sol": {"input_per_million": 0.0, "output_per_million": 0.0},
-    # Tarifas API estándar de los modelos solicitados en el enunciado. La
-    # modalidad Codex continúa separada mediante metadata de facturación.
+    # Tarifas API estándar del routing adicional fijado para esta entrega. El
+    # PDF oficial no prescribe modelos concretos. La modalidad Codex continúa
+    # separada mediante metadata de facturación.
     "gpt-4o-mini": {"input_per_million": 0.15, "output_per_million": 0.60},
     "gpt-4o": {"input_per_million": 2.50, "output_per_million": 10.00},
     "text-embedding-3-small": {
