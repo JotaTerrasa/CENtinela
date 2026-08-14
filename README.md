@@ -6,6 +6,11 @@ centers. Captura publicaciones oficiales, genera informes diarios trazables,
 permite consultas RAG, gestiona alertas por usuario y registra tokens, latencia
 y atribución económica por ejecución.
 
+**Demo cloud pública:**
+[abrir CENtinela sin login](https://centinela-regulatory.streamlit.app/?embed=true)
+— replay histórico de solo lectura. El parámetro `embed=true` es el acceso
+anónimo validado; la URL raíz puede mostrar el acceso de Streamlit.
+
 El runtime de IA es intercambiable: **Codex con una sesión ChatGPT, OpenAI API,
 Ollama o vLLM/OpenAI-compatible**. Codex continúa siendo el perfil
 predeterminado y validado de la entrega; Ollama ofrece una réplica local sin API
@@ -205,7 +210,7 @@ OpenAI API o un gateway privado vLLM, con una identidad de servicio gestionada.
 
 Streamlit Community Cloud puede publicar un **replay de artefactos de
 aceptación** sin copiar la sesión Codex ni guardar una API key. El modo
-`PUBLIC_DEMO_MODE=true` carga en memoria el catálogo de citas, el informe, el
+`PUBLIC_DEMO_MODE="true"` carga en memoria el catálogo de citas, el informe, el
 dictamen, la consulta RAG y la traza conservada en `docs/demo/`. No inicializa
 SQLite ni rutas de runtime, no crea identidades por visitante y bloquea en
 servidor scraping, indexación y llamadas generativas. La integridad del bundle
@@ -223,7 +228,9 @@ configuración UI simulada declarada en el manifest, no evidencia histórica.
 2. Copia el contenido de
    [`.streamlit/secrets.example.toml`](.streamlit/secrets.example.toml) en
    **Advanced settings → Secrets** y selecciona Python 3.12 en la configuración
-   del runtime.
+   del runtime. En los secretos de Streamlit, `PUBLIC_DEMO_MODE` debe declararse
+   como texto TOML, exactamente `PUBLIC_DEMO_MODE = "true"`, con `true` entre
+   comillas; no uses el booleano sin comillas `PUBLIC_DEMO_MODE = true`.
 3. Despliega y verifica todas las vistas. `packages.txt` instala la única
    dependencia de sistema adicional.
 
