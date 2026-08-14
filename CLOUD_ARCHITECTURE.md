@@ -15,6 +15,11 @@ un gateway privado. Codex y OpenAI API permanecen como rutas gestionadas cuando
 la organización prioriza calidad, velocidad de adopción o menor carga
 operativa.
 
+La vista integral de contexto, componentes, secuencias y fronteras de confianza
+está en [ARQUITECTURA.md](ARQUITECTURA.md); el inventario exacto del runtime está
+en [STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md). Este documento se concentra en
+capacidad, operación y gobierno de la evolución cloud.
+
 ## Modos soportados
 
 | Modo | Uso recomendado | Ventajas | Límites principales |

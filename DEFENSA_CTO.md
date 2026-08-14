@@ -7,6 +7,12 @@ perfiles HTTP, RAG trazable y barreras de calidad antes de persistir o distribui
 un informe. El recorrido operativo de siete minutos, su preparación y sus
 contingencias están separados en [`GUION_DEMO.md`](GUION_DEMO.md).
 
+Para proyectar los diagramas durante la defensa, usa
+[`ARQUITECTURA.md`](ARQUITECTURA.md). El inventario defendible de versiones y
+componentes está en [`STACK_TECNOLOGICO.md`](STACK_TECNOLOGICO.md), y la
+trazabilidad contra el PDF en
+[`MATRIZ_CUMPLIMIENTO.md`](MATRIZ_CUMPLIMIENTO.md).
+
 ## Mensaje central
 
 > CENtinela convierte siete canales regulatorios chilenos en una cadena de

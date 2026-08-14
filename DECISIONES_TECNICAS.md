@@ -14,6 +14,12 @@ ejecución síncrona son elecciones deliberadas del MVP. El paso a producción
 exige identidad corporativa, persistencia gestionada, trabajos asíncronos,
 secret manager, evaluación dorada y operación formal del proveedor/modelo.
 
+Las vistas completas de contexto, componentes, secuencias, RAG, observabilidad
+y despliegue están en [ARQUITECTURA.md](ARQUITECTURA.md). El inventario de
+tecnologías y versiones está en
+[STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md), y la correspondencia con el
+enunciado se mantiene en [MATRIZ_CUMPLIMIENTO.md](MATRIZ_CUMPLIMIENTO.md).
+
 ## Principios
 
 1. Una afirmación regulatoria sin evidencia verificable no se publica.
@@ -102,8 +108,9 @@ los overrides `*_PROVIDER` permiten routing híbrido.
 | Informe | Sol | GPT-4o | Qwen3.5 9B demo; 27B candidato |
 | Judge | Terra | GPT-4o mini | Qwen3.5 9B demo; Mistral Small 3.1 candidato |
 
-El enunciado exige GPT-4o mini para planificación/filtrado y GPT-4o para la
-redacción final en la ruta API; esos defaults están preservados. Codex utiliza
+El requisito adicional de implementación fija GPT-4o mini para
+planificación/filtrado y GPT-4o para la redacción final en la ruta API; esos
+defaults están preservados sin atribuirlos al PDF oficial. Codex utiliza
 los tiers Luna/Terra/Sol equivalentes por valor. Ollama usa un solo modelo en la
 demo para evitar cargar varios pesos; producción debe decidir por benchmark.
 
@@ -185,9 +192,14 @@ Se guarda en metadata como coste de cómputo estimado y nunca se suma al coste A
 exacto. No incluye necesariamente ociosidad, energía, almacenamiento ni
 overhead; producción debe obtenerlos de la plataforma cloud.
 
-**Pricing.** GPT-4o mini y GPT-4o tienen defaults explícitos para cumplir la
-prueba. Nuevos modelos o tarifas deben versionarse y reconciliarse; un alias sin
-precio no rompe una respuesta válida, pero queda `pricing_status=unknown`.
+**Pricing.** La tabla configurada se verificó el 14 de agosto de 2026 contra las
+fichas oficiales de [GPT-4o](https://developers.openai.com/api/docs/models/gpt-4o),
+[GPT-4o mini](https://developers.openai.com/api/docs/models/gpt-4o-mini) y
+[text-embedding-3-small](https://developers.openai.com/api/docs/models/text-embedding-3-small).
+El cálculo es exacto respecto a esa tabla versionada, no una garantía de tarifa
+futura. Antes de cada release productiva se debe reconciliar el pricing; un
+alias sin precio no rompe una respuesta válida, pero queda
+`pricing_status=unknown`.
 
 ## ADR-006: citas y LLM-as-Judge fail-closed
 
