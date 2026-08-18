@@ -12,8 +12,10 @@ import logging
 import shutil
 import subprocess
 import unicodedata
+from html import escape
 from time import perf_counter
 from typing import Any, Iterable, Mapping, Sequence
+from urllib.parse import urlsplit
 
 import pandas as pd
 import streamlit as st
@@ -817,6 +819,20 @@ def _format_timestamp(value: Any) -> str:
         return str(value)
 
 
+def _captured_evidence(item: Mapping[str, Any], *, max_chars: int = 1_800) -> str:
+    """Devuelve texto normalizado persistido, acotado y sin inventar contenido."""
+
+    if max_chars < 1:
+        raise ValueError("max_chars debe ser positivo")
+    summary = " ".join(str(item.get("summary") or "").split())
+    content = " ".join(str(item.get("content") or "").split())
+    evidence = content if len(content) > len(summary) else summary
+    if len(evidence) <= max_chars:
+        return evidence
+    shortened = evidence[: max_chars + 1].rsplit(" ", 1)[0].rstrip()
+    return f"{shortened}…"
+
+
 def _news_frame(news: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for item in news:
@@ -825,6 +841,7 @@ def _news_frame(news: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
         capture_method = (
             "N/D" if fallback is None else ("Fallback" if fallback else "Directa")
         )
+        url = _safe_external_url(item.get("url"))
         rows.append(
             {
                 "Fecha": _format_timestamp(item.get("published_at") or item.get("fetched_at")),
@@ -832,10 +849,173 @@ def _news_frame(news: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
                 "Titular": item.get("title") or "—",
                 "Temas": ", ".join(str(value) for value in topics),
                 "Método de captura": capture_method,
-                "URL": item.get("url") or "",
+                "Dominio oficial": urlsplit(url).netloc if url else "N/D",
+                "Texto normalizado conservado": _captured_evidence(item),
+                "Capturado el": _format_timestamp(item.get("fetched_at")),
+                "Huella SHA-256": str(item.get("content_hash") or ""),
+                "URL": url,
             }
         )
     return pd.DataFrame(rows)
+
+
+def _safe_external_url(value: Any) -> str:
+    """Devuelve exclusivamente URLs HTTP(S) absolutas aptas para abrir en la UI."""
+
+    candidate = str(value or "").strip()
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        return ""
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return candidate
+
+
+def _source_link_html(url: Any, *, source: str, title: str) -> str:
+    """Crea un enlace externo seguro que funciona sin ventanas emergentes."""
+
+    safe_url = _safe_external_url(url)
+    if not safe_url:
+        return ""
+    accessible_label = escape(
+        f"Abrir fuente oficial: {source} · {title}",
+        quote=True,
+    )
+    return (
+        f'<a class="source-open-link" href="{escape(safe_url, quote=True)}" '
+        'target="_self" rel="noopener noreferrer" '
+        f'aria-label="{accessible_label}">'
+        "<span>Abrir fuente</span>"
+        '<span class="source-open-icon" aria-hidden="true">↗</span>'
+        "</a>"
+    )
+
+
+def _news_page(
+    frame: pd.DataFrame,
+    requested_page: Any,
+    *,
+    page_size: int = 10,
+) -> tuple[pd.DataFrame, int, int]:
+    """Devuelve una página acotada y el total, incluso si cambian los filtros."""
+
+    if page_size < 1:
+        raise ValueError("page_size debe ser positivo")
+    total_pages = max(1, (len(frame) + page_size - 1) // page_size)
+    try:
+        page = int(requested_page)
+    except (TypeError, ValueError):
+        page = 1
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    return frame.iloc[start : start + page_size], page, total_pages
+
+
+def _render_news_table(frame: pd.DataFrame, *, key: str) -> None:
+    """Renderiza una lista paginada con un enlace nativo visible por publicación."""
+
+    if frame.empty:
+        st.info("No hay resultados que coincidan con este filtro.")
+        return
+
+    page_size = 10
+    valid_links = sum(bool(_safe_external_url(value)) for value in frame["URL"])
+    summary_col, download_col = st.columns([4, 1])
+    summary_col.caption(
+        f"{len(frame)} resultados · {valid_links} enlaces oficiales disponibles. "
+        "Consulta primero la evidencia capturada; el portal oficial es externo y "
+        "su disponibilidad no depende de CENtinela."
+    )
+    download_col.download_button(
+        "Descargar CSV",
+        data=frame.to_csv(index=False).encode("utf-8"),
+        file_name="centinela_publicaciones.csv",
+        mime="text/csv",
+        key=f"{key}_download",
+        width="stretch",
+    )
+
+    page_key = f"{key}_page"
+    _, _, total_pages = _news_page(frame, 1, page_size=page_size)
+    current_page = st.session_state.get(page_key, 1)
+    try:
+        page_out_of_bounds = int(current_page) not in range(1, total_pages + 1)
+    except (TypeError, ValueError):
+        page_out_of_bounds = True
+    if page_out_of_bounds:
+        st.session_state.pop(page_key, None)
+    requested_page = st.pagination(
+        total_pages,
+        key=page_key,
+        max_visible_pages=7,
+        width="stretch",
+    )
+    page_frame, page, _ = _news_page(
+        frame,
+        requested_page,
+        page_size=page_size,
+    )
+    st.caption(f"Página {page} de {total_pages}")
+
+    start_position = (page - 1) * page_size
+    for offset, row in enumerate(page_frame.to_dict("records")):
+        position = start_position + offset
+        title = str(row.get("Titular") or "Publicación oficial")
+        source = str(row.get("Organismo") or "Fuente oficial")
+        date = str(row.get("Fecha") or "—")
+        topics = str(row.get("Temas") or "").strip()
+        capture_method = str(row.get("Método de captura") or "N/D")
+        evidence = str(row.get("Texto normalizado conservado") or "").strip()
+        captured_at = str(row.get("Capturado el") or "—")
+        content_hash = str(row.get("Huella SHA-256") or "").strip()
+        url = _safe_external_url(row.get("URL"))
+
+        with st.container(border=True):
+            detail_col, action_col = st.columns([5, 1], vertical_alignment="center")
+            detail_col.markdown(f"**{title}**")
+            detail_col.caption(f"{source} · {date} · Captura: {capture_method}")
+            if topics:
+                detail_col.caption(f"Temas: {topics}")
+            with detail_col.expander("Ver evidencia capturada"):
+                st.caption(
+                    "Texto normalizado conservado desde el feed o listado oficial; "
+                    "no representa una copia íntegra del portal."
+                )
+                if evidence:
+                    st.text(evidence)
+                else:
+                    st.info(
+                        "Este registro conserva el titular, el organismo y la URL "
+                        "oficial, pero no un extracto textual."
+                    )
+                st.caption(f"Evidencia recuperada por CENtinela: {captured_at}.")
+                if content_hash:
+                    st.caption(f"Huella del texto normalizado: {content_hash[:16]}…")
+                if capture_method == "Fallback":
+                    st.warning(
+                        "La fuente requirió una ruta de captura alternativa. El "
+                        "portal oficial puede aplicar controles de acceso o tardar "
+                        "en responder; el texto normalizado anterior permanece "
+                        "disponible y debe contrastarse con el original."
+                    )
+            if url:
+                action_col.markdown(
+                    _source_link_html(url, source=source, title=title),
+                    unsafe_allow_html=True,
+                )
+                action_col.caption(
+                    "Puede tardar o bloquearse"
+                    if capture_method == "Fallback"
+                    else "Sitio externo"
+                )
+            else:
+                action_col.button(
+                    "Fuente no disponible",
+                    key=f"{key}_missing_{position}",
+                    disabled=True,
+                    width="stretch",
+                )
 
 
 def render_dashboard(settings: Settings, database: Database, user: Mapping[str, Any]) -> None:
@@ -1003,17 +1183,7 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
     with insight_tab:
         if visible:
             frame = _news_frame(visible)
-            st.dataframe(
-                frame,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "URL": st.column_config.LinkColumn(
-                        "Fuente oficial", display_text="Abrir ↗"
-                    ),
-                    "Titular": st.column_config.TextColumn(width="large"),
-                },
-            )
+            _render_news_table(frame, key="dashboard_news_table")
         else:
             filter_description = f" para «{query}»" if query else ""
             st.info(
@@ -1026,11 +1196,9 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
             st.info("Configura al menos una alerta para ver coincidencias personalizadas.")
         else:
             st.caption("Filtro activo: " + " · ".join(alert_keywords))
-            st.dataframe(
+            _render_news_table(
                 _news_frame(matches),
-                hide_index=True,
-                width="stretch",
-                column_config={"URL": st.column_config.LinkColumn(display_text="Abrir ↗")},
+                key="dashboard_alert_matches_table",
             )
     with coverage_tab:
         counts = pd.DataFrame(
@@ -1265,7 +1433,11 @@ def build_report_exports(report: Mapping[str, Any]) -> tuple[bytes, bytes, str, 
     )
 
 
-def _render_report_downloads(report: Mapping[str, Any]) -> None:
+def _render_report_downloads(
+    report: Mapping[str, Any],
+    *,
+    key_prefix: str,
+) -> None:
     markdown, payload, safe_date, execution_id = build_report_exports(report)
     left, right = st.columns(2)
     left.download_button(
@@ -1273,6 +1445,7 @@ def _render_report_downloads(report: Mapping[str, Any]) -> None:
         data=markdown,
         file_name=f"centinela-{safe_date}-{execution_id[:8]}.md",
         mime="text/markdown",
+        key=f"{key_prefix}_markdown",
         width="stretch",
     )
     right.download_button(
@@ -1280,6 +1453,7 @@ def _render_report_downloads(report: Mapping[str, Any]) -> None:
         data=payload,
         file_name=f"centinela-{safe_date}-{execution_id[:8]}.json",
         mime="application/json",
+        key=f"{key_prefix}_json",
         width="stretch",
     )
 
@@ -1418,7 +1592,7 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
         st.subheader("Resultado")
         _render_report_quality_banner(report)
         st.markdown(str(report.get("report") or ""))
-        _render_report_downloads(report)
+        _render_report_downloads(report, key_prefix="latest_report")
         with st.expander("Evaluación LLM-as-Judge", expanded=True):
             st.json(report.get("evaluation") or {"status": "sin evaluación"})
         citations = report.get("citations") or []
@@ -1460,7 +1634,8 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
                     "evidence_origin": metadata.get("evidence_origin"),
                     "validated_at": metadata.get("validated_at"),
                     "origin_sha256": metadata.get("origin_sha256"),
-                }
+                },
+                key_prefix=f"historical_report_{historical['id']}",
             )
             historical_judge = metadata.get("judge") or {}
             if historical_judge:
@@ -2059,6 +2234,10 @@ def _inject_styles() -> None:
   [data-testid="stMetric"] { background: #fff; border: 1px solid #dce9e2; border-radius: 14px; padding: 1rem; }
   [data-testid="stSidebar"] { border-right: 1px solid #dce9e2; }
   .stButton > button[kind="primary"] { font-weight: 700; }
+  .source-open-link { display: flex; width: 100%; min-height: 2.55rem; align-items: center; justify-content: center; gap: .45rem; padding: .5rem .75rem; border: 1px solid #b8c9c1; border-radius: .5rem; background: #fff; color: #143d37 !important; font-weight: 650; line-height: 1.2; text-align: center; text-decoration: none !important; }
+  .source-open-link:hover { border-color: #278b58; background: #f1faf5; color: #167545 !important; }
+  .source-open-link:focus-visible { border-color: #278b58; outline: 3px solid rgba(39, 139, 88, .22); outline-offset: 2px; }
+  .source-open-icon { font-size: 1rem; }
   [data-testid="stHeaderActionElements"] a[aria-label^="Link to heading"] { display: none !important; }
   [data-testid="stAppDeployButton"], .stAppDeployButton, #MainMenu, footer { display: none !important; }
 </style>
