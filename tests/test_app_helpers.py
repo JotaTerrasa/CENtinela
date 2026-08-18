@@ -4,10 +4,15 @@ import pytest
 
 from app import (
     _billing_mode,
+    _captured_evidence,
     _economic_cost_label,
     _execution_display_status,
     _format_timestamp,
     _index_local_news,
+    _news_frame,
+    _news_page,
+    _safe_external_url,
+    _source_link_html,
     _subscription_imputation,
     article_matches_keywords,
     articles_matching_alerts,
@@ -235,6 +240,109 @@ def test_dashboard_snapshot_exposes_focus_freshness_and_partial_coverage() -> No
     assert snapshot["focus_count"] == 1
     assert snapshot["next_focus"] == "Norma BESS"
     assert snapshot["latest_capture"] == "2026-08-13T12:00:00Z"
+
+
+def test_news_frame_preserves_traceability_and_captured_evidence() -> None:
+    frame = _news_frame(
+        [
+            {
+                "source": "Comisión Nacional de Energía (CNE)",
+                "title": "Norma técnica",
+                "url": "https://www.cne.cl/prensa/norma-tecnica/",
+                "summary": "Resumen regulatorio.",
+                "content": "Contenido regulatorio capturado con mayor detalle.",
+                "fetched_at": "2026-08-13T12:00:00Z",
+                "is_fallback": True,
+                "metadata": {"fallback_reason": "HTTP 403 en el endpoint directo"},
+            }
+        ]
+    )
+
+    assert frame.loc[0, "Dominio oficial"] == "www.cne.cl"
+    assert frame.loc[0, "URL"] == "https://www.cne.cl/prensa/norma-tecnica/"
+    assert frame.loc[0, "Texto normalizado conservado"] == (
+        "Contenido regulatorio capturado con mayor detalle."
+    )
+    assert frame.loc[0, "Capturado el"] == "13/08/2026 08:00"
+    assert frame.loc[0, "Método de captura"] == "Fallback"
+    assert frame.loc[0, "Huella SHA-256"] == ""
+
+
+def test_captured_evidence_is_compact_and_never_fabricates_missing_text() -> None:
+    assert _captured_evidence({"summary": "", "content": ""}) == ""
+    assert _captured_evidence({"summary": "resumen", "content": "texto completo"}) == (
+        "texto completo"
+    )
+    assert _captured_evidence({"content": "uno dos tres cuatro"}, max_chars=12) == (
+        "uno dos tres…"
+    )
+    with pytest.raises(ValueError, match="positivo"):
+        _captured_evidence({"content": "texto"}, max_chars=0)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["javascript:alert(1)", "data:text/plain,contenido", "/ruta/relativa", ""],
+)
+def test_safe_external_url_rejects_non_http_destinations(value: str) -> None:
+    assert _safe_external_url(value) == ""
+
+
+def test_source_link_html_opens_in_same_tab_and_escapes_metadata() -> None:
+    markup = _source_link_html(
+        "https://www.cne.cl/prensa/norma?tema=bess&region=sur",
+        source='CNE "Chile"',
+        title="Norma <BESS>",
+    )
+
+    assert (
+        'href="https://www.cne.cl/prensa/norma?tema=bess&amp;region=sur"' in markup
+    )
+    assert 'target="_self"' in markup
+    assert 'rel="noopener noreferrer"' in markup
+    assert "CNE &quot;Chile&quot;" in markup
+    assert "Norma &lt;BESS&gt;" in markup
+    assert "Abrir fuente" in markup
+
+
+def test_source_link_html_rejects_unsafe_destinations() -> None:
+    assert (
+        _source_link_html(
+            "javascript:alert(1)",
+            source="Fuente",
+            title="Contenido",
+        )
+        == ""
+    )
+
+
+def test_news_page_is_bounded_and_stable_when_filters_shrink() -> None:
+    frame = _news_frame(
+        [
+            {
+                "source": "Servicio de Evaluación Ambiental (SEA)",
+                "title": f"Proyecto {index}",
+                "url": f"https://www.sea.gob.cl/noticias/proyecto-{index}",
+            }
+            for index in range(23)
+        ]
+    )
+
+    first, page, total = _news_page(frame, 1)
+    assert (len(first), page, total) == (10, 1, 3)
+    assert first.iloc[0]["Titular"] == "Proyecto 0"
+
+    last, page, total = _news_page(frame, 99)
+    assert (len(last), page, total) == (3, 3, 3)
+    assert last.iloc[-1]["Titular"] == "Proyecto 22"
+
+    filtered, page, total = _news_page(frame.iloc[:2], 3)
+    assert (len(filtered), page, total) == (2, 1, 1)
+
+
+def test_news_page_rejects_non_positive_page_size() -> None:
+    with pytest.raises(ValueError, match="positivo"):
+        _news_page(_news_frame([]), 1, page_size=0)
 
 
 def test_alert_matching_is_case_and_accent_insensitive() -> None:

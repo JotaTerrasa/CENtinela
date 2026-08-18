@@ -38,6 +38,21 @@ def test_public_demo_renders_every_view_without_sqlite(
     app.run()
     assert not app.exception
     assert [title.value for title in app.title] == ["Radar regulatorio"]
+    source_links = [
+        block.value
+        for block in app.markdown
+        if '<a class="source-open-link"' in str(block.value)
+    ]
+    assert len(source_links) == 10
+    assert all('target="_self"' in markup for markup in source_links)
+    assert all('href="https://' in markup for markup in source_links)
+    assert len(app.expander) == 10
+    assert all(
+        expander.label == "Ver evidencia capturada" for expander in app.expander
+    )
+    assert any(
+        "no un extracto textual" in info.value for info in app.info
+    )
 
     expected = {
         "Informe diario": "Informe regulatorio diario",
@@ -50,6 +65,15 @@ def test_public_demo_renders_every_view_without_sqlite(
         app.radio[0].set_value(page).run()
         assert not app.exception
         assert [item.value for item in app.title] == [title]
+
+    # El replay inicializa el informe reciente y también lo ofrece en el
+    # historial. Abrir ambos a la vez no debe duplicar IDs de descarga.
+    app.radio[0].set_value("Informe diario").run()
+    assert app.selectbox
+    report_selector = app.selectbox[0]
+    report_selector.set_value(report_selector.options[0]).run()
+    assert not app.exception
+    assert len(app.get("download_button")) == 4
 
     assert not database_path.exists()
     assert not any(path.exists() for path in runtime_paths)
