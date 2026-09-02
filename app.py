@@ -1063,17 +1063,17 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
         latest_display = f"{latest_display[:6]}{latest_display[-2:]}"
 
     if settings.public_demo_mode:
-        acceptance = getattr(database, "acceptance_snapshot", {})
+        validation = getattr(database, "validation_snapshot", {})
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Catálogo de citas", len(news))
         c2.metric("Organismos citados", snapshot["coverage_count"])
         c3.metric(
-            "Snapshot de aceptación",
-            int(acceptance.get("publications_in_dashboard") or 0),
+            "Snapshot validado",
+            int(validation.get("publications_in_dashboard") or 0),
         )
         c4.metric(
             "Fuentes recuperadas",
-            f"{int(acceptance.get('sources_recovered') or 0)}/7",
+            f"{int(validation.get('sources_recovered') or 0)}/7",
         )
     else:
         direct_count = len(news) - fallback_count
@@ -1226,7 +1226,7 @@ def render_dashboard(settings: Settings, database: Database, user: Mapping[str, 
         if settings.public_demo_mode:
             st.caption(
                 "Cobertura del catálogo conservado: 34 citas de 6 organismos. "
-                "La aceptación original registró, por separado, 53 publicaciones "
+                "La validación original registró, por separado, 53 publicaciones "
                 "y 7/7 fuentes recuperadas."
             )
         else:
@@ -1383,10 +1383,10 @@ def build_report_exports(report: Mapping[str, Any]) -> tuple[bytes, bytes, str, 
     safe_date = str(report.get("report_date") or business_today().isoformat())[:10]
     is_replay = bool(report.get("evidence_replay")) or str(
         report.get("artifact_kind") or ""
-    ) == "acceptance_artifact_replay"
+    ) == "validated_demo_replay"
     provenance = {
         "artifact_kind": (
-            "acceptance_artifact_replay" if is_replay else "live_execution"
+            "validated_demo_replay" if is_replay else "live_execution"
         ),
         "evidence_replay": is_replay,
         "evidence_origin": report.get("evidence_origin"),
@@ -1413,8 +1413,8 @@ def build_report_exports(report: Mapping[str, Any]) -> tuple[bytes, bytes, str, 
     markdown = content
     if is_replay:
         markdown = (
-            "<!-- artifact_kind: acceptance_artifact_replay -->\n"
-            "# Replay histórico de aceptación — no es una ejecución nueva\n\n"
+            "<!-- artifact_kind: validated_demo_replay -->\n"
+            "# Replay histórico validado — no es una ejecución nueva\n\n"
             f"- Validado: {provenance['validated_at'] or 'N/D'}\n"
             f"- Origen: `{provenance['evidence_origin'] or 'N/D'}`\n"
             f"- SHA-256 de origen: `{provenance['origin_sha256'] or 'N/D'}`\n\n"
@@ -1494,8 +1494,8 @@ def render_report(settings: Settings, database: Database, user: Mapping[str, Any
         judge_runtime = {"ready": False}
         report_ready = False
         st.info(
-            "Esta vista reproduce un informe generado y validado durante la "
-            "aceptación. No ejecuta un modelo nuevo ni consume cuota. Despliega "
+            "Esta vista reproduce un informe generado durante una validación "
+            "local. No ejecuta un modelo nuevo ni consume cuota. Despliega "
             "el modo interactivo y conecta Codex, OpenAI, Ollama o vLLM para "
             "habilitar una ejecución en vivo."
         )
@@ -1916,7 +1916,7 @@ def render_observability(database: Database, user: Mapping[str, Any]) -> None:
     )
     if getattr(database, "is_read_only_demo", False):
         st.info(
-            "Replay histórico: las cifras proceden de la traza de aceptación "
+            "Replay histórico: las cifras proceden de la traza de validación "
             "conservada; esta visita no ejecuta modelos ni escribe telemetría. "
             "La fila de ejecución usa tiempo de pared y el detalle, latencia por llamada."
         )

@@ -4,7 +4,7 @@ Recorrido reproducible de **7 minutos** para presentar el MVP sin depender de
 que las siete webs públicas o el proveedor de IA respondan durante la reunión.
 La demo enseña primero el valor y después la arquitectura. El discurso técnico
 ampliado y las preguntas de comité están en
-[`DEFENSA_CTO.md`](DEFENSA_CTO.md).
+[`REVISION_ARQUITECTURA.md`](REVISION_ARQUITECTURA.md).
 
 ## Resultado que debe recordar la audiencia
 
@@ -88,7 +88,7 @@ separa la sesión del usuario de la identidad del proveedor de IA.
 abrir una publicación en su URL oficial.
 
 **Acción en replay:** mostrar primero las dos cifras separadas —34 citas de 6
-organismos conservadas y 53 publicaciones/7 fuentes en el snapshot de aceptación—;
+organismos conservadas y 53 publicaciones/7 fuentes en el snapshot validado—;
 abrir una URL oficial. No presentar las fechas N/D como pérdida del sistema: no
 formaban parte del artefacto exportado.
 

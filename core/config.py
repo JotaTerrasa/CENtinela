@@ -87,9 +87,8 @@ DEFAULT_MODEL_PRICING: dict[str, dict[str, float]] = {
     "gpt-5.6-luna": {"input_per_million": 0.0, "output_per_million": 0.0},
     "gpt-5.6-terra": {"input_per_million": 0.0, "output_per_million": 0.0},
     "gpt-5.6-sol": {"input_per_million": 0.0, "output_per_million": 0.0},
-    # Tarifas API estándar del routing adicional fijado para esta entrega. El
-    # PDF oficial no prescribe modelos concretos. La modalidad Codex continúa
-    # separada mediante metadata de facturación.
+    # Tarifas API estándar del perfil de routing de referencia. La modalidad
+    # Codex continúa separada mediante metadata de facturación.
     "gpt-4o-mini": {"input_per_million": 0.15, "output_per_million": 0.60},
     "gpt-4o": {"input_per_million": 2.50, "output_per_million": 10.00},
     "text-embedding-3-small": {
@@ -209,7 +208,7 @@ class Settings(BaseSettings):
     @classmethod
     def enforce_contractual_exchange_rate(cls, value: float) -> float:
         if float(value) != 940.0:
-            raise ValueError("USD_TO_CLP es fijo para la prueba: 1 USD = 940 CLP")
+            raise ValueError("USD_TO_CLP es fijo en el proyecto: 1 USD = 940 CLP")
         return 940.0
 
     @field_validator("codex_cli_path", mode="before")

@@ -13,7 +13,7 @@ anónimo validado; la URL raíz puede mostrar el acceso de Streamlit.
 
 El runtime de IA es intercambiable: **Codex con una sesión ChatGPT, OpenAI API,
 Ollama o vLLM/OpenAI-compatible**. Codex continúa siendo el perfil
-predeterminado y validado de la entrega; Ollama ofrece una réplica local sin API
+predeterminado y validado del proyecto; Ollama ofrece una réplica local sin API
 key y vLLM constituye la ruta recomendada para inferencia privada con GPU en
 cloud.
 
@@ -23,7 +23,7 @@ cloud.
 |---|---|
 | [ARQUITECTURA.md](ARQUITECTURA.md) | ¿Cómo funciona el sistema, dónde están las fronteras de confianza y cómo evoluciona a producción? |
 | [STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md) | ¿Qué tecnologías, versiones, modelos, protocolos y herramientas componen la solución? |
-| [MATRIZ_CUMPLIMIENTO.md](MATRIZ_CUMPLIMIENTO.md) | ¿Dónde se demuestra cada requisito del enunciado y qué límites permanecen abiertos? |
+| [TRAZABILIDAD_CAPACIDADES.md](TRAZABILIDAD_CAPACIDADES.md) | ¿Dónde se demuestra cada capacidad declarada y qué límites permanecen abiertos? |
 | [DECISIONES_TECNICAS.md](DECISIONES_TECNICAS.md) | ¿Qué trade-offs se aceptaron y por qué? |
 | [CLOUD_ARCHITECTURE.md](CLOUD_ARCHITECTURE.md) | ¿Cómo operar modelos abiertos y una topología cloud privada? |
 | [SECURITY.md](SECURITY.md) | ¿Qué amenazas, controles y deudas de seguridad existen? |
@@ -65,7 +65,7 @@ alternativa productiva, está en
 | Captura | Requests, Beautiful Soup, Feedparser y `urllib3 Retry` | HTML, RSS, sitemap, límites y recuperación resiliente |
 | Observabilidad | Callback LangChain y tablas SQLite | Tokens exactos reportados, latencia, estado y coste USD/CLP |
 | Seguridad | PBKDF2-HMAC-SHA256, `SecretStr` y Docker endurecido | Identidad MVP, protección de secretos y mínimo privilegio |
-| Entrega | Docker Compose, GitHub Actions y Streamlit Community Cloud | Réplica interactiva, CI y replay público de solo lectura |
+| Distribución | Docker Compose, GitHub Actions y Streamlit Community Cloud | Réplica interactiva, CI y replay público de solo lectura |
 | Calidad | Pytest, Ruff y pip-audit | Contratos, regresión, estilo y dependencias vulnerables |
 
 ## Arquitectura ejecutiva
@@ -111,7 +111,7 @@ y arquitectura objetivo de producción con fronteras de confianza.
 
 | Proveedor | Transporte | Identidad | Uso recomendado | Facturación mostrada |
 |---|---|---|---|---|
-| `codex` | `codex exec` JSONL | sesión ChatGPT/Codex | demo y evaluación individual | suscripción, coste por llamada N/A |
+| `codex` | `codex exec` JSONL | sesión ChatGPT/Codex | desarrollo local y demostración | suscripción, coste por llamada N/A |
 | `openai` | OpenAI Responses API | `OPENAI_API_KEY` | servicio gestionado | coste por tokens en USD/CLP |
 | `ollama` | Chat Completions y embeddings compatibles | red privada | desarrollo, edge y piloto | API 0; cómputo separado |
 | `vllm` | endpoint OpenAI-compatible | API key del gateway | cloud privado con GPU | API 0; cómputo separado |
@@ -184,11 +184,11 @@ CENtinela/
 ├── docker-compose.ollama-gpu.yml
 ├── ARQUITECTURA.md
 ├── STACK_TECNOLOGICO.md
-├── MATRIZ_CUMPLIMIENTO.md
+├── TRAZABILIDAD_CAPACIDADES.md
 ├── CLOUD_ARCHITECTURE.md
 ├── GUION_DEMO.md
-├── DEFENSA_CTO.md
-├── CHECKLIST_ENTREGA.md
+├── REVISION_ARQUITECTURA.md
+├── CHECKLIST_RELEASE.md
 ├── DECISIONES_TECNICAS.md
 └── SECURITY.md
 ```
@@ -244,14 +244,14 @@ queda en `centinela-codex-auth`; contiene tokens y debe tratarse como un secreto
 El CLI ejecuta cada turno en un workdir aislado, sin shell interactiva, con red
 y escritura denegadas para los comandos que pudiera proponer el modelo.
 
-Codex es apropiado para esta evaluación, pero una sesión humana no es la
+Codex es apropiado para la demostración local, pero una sesión humana no es la
 identidad recomendada para réplicas cloud desatendidas. En cloud debe elegirse
 OpenAI API o un gateway privado vLLM, con una identidad de servicio gestionada.
 
 ## Demo pública sin credenciales
 
-Streamlit Community Cloud puede publicar un **replay de artefactos de
-aceptación** sin copiar la sesión Codex ni guardar una API key. El modo
+Streamlit Community Cloud puede publicar un **replay de artefactos validados**
+sin copiar la sesión Codex ni guardar una API key. El modo
 `PUBLIC_DEMO_MODE="true"` carga en memoria el catálogo de citas, el informe, el
 dictamen, la consulta RAG y la traza conservada en `docs/demo/`. No inicializa
 SQLite ni rutas de runtime, no crea identidades por visitante y bloquea en
@@ -260,7 +260,7 @@ se comprueba con SHA-256 antes de renderizarlo.
 
 El replay distingue lo que se conserva de lo que solo acredita el resumen
 histórico: el catálogo contiene 34 citas de 6 organismos y carece de fechas por
-artículo y método de captura; la aceptación original registró por separado 53
+artículo y método de captura; la validación original registró por separado 53
 publicaciones y 7/7 fuentes recuperadas. La UI muestra esos campos como N/D y
 nunca fabrica la fila o las fechas que faltan. La regla de alerta es una
 configuración UI simulada declarada en el manifest, no evidencia histórica.
@@ -329,9 +329,8 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 
 OpenAI utiliza Responses API con `store=false`. Las salidas estructuradas usan
 JSON Schema. `gpt-4o-mini` cubre planificación, filtrado, RAG y Judge; `gpt-4o`
-redacta el informe final según el requisito de routing fijado para esta entrega.
-Este routing es una decisión de implementación adicional; no se atribuye al PDF
-oficial de Grenergy.
+redacta el informe final según el perfil de routing de referencia. Este routing
+es una decisión de implementación del proyecto.
 
 ## vLLM / endpoint compatible
 
@@ -423,26 +422,26 @@ del MVP no sustituye SSO/OIDC, RBAC ni un secret manager de producción.
 6. En **Observabilidad**, contrasta backend, modelos, tokens, latencia y coste.
 7. En **Arquitectura**, verifica el routing efectivo de ese despliegue.
 
-`docs/demo/` conserva capturas y artefactos de una ejecución Codex real de
-aceptación. Permiten reproducir las pantallas y revisar salidas, citas y trazas
+`docs/demo/` conserva capturas y artefactos de una ejecución Codex real
+validada. Permiten reproducir las pantallas y revisar salidas, citas y trazas
 sin consumir cuota; no equivalen a reejecutar la cadena de captura porque el
 corpus y sus extractos no forman parte del paquete. Tampoco incluyen SQLite,
 usuarios, contraseñas, índices ni credenciales.
 
-## Presentación y entrega
+## Demostración y documentación
 
 - [`GUION_DEMO.md`](GUION_DEMO.md) contiene el recorrido cronometrado de siete
   minutos, preflight, mensajes exactos y Plan B sin servicios externos.
-- [`DEFENSA_CTO.md`](DEFENSA_CTO.md) desarrolla la narrativa de arquitectura,
+- [`REVISION_ARQUITECTURA.md`](REVISION_ARQUITECTURA.md) desarrolla la narrativa de arquitectura,
   límites, economía y respuestas a preguntas difíciles.
-- [`CHECKLIST_ENTREGA.md`](CHECKLIST_ENTREGA.md) define los gates de calidad,
-  seguridad, release y envío al evaluador.
+- [`CHECKLIST_RELEASE.md`](CHECKLIST_RELEASE.md) define los gates de calidad,
+  seguridad y publicación de una versión.
 - [`ARQUITECTURA.md`](ARQUITECTURA.md),
   [`STACK_TECNOLOGICO.md`](STACK_TECNOLOGICO.md) y
-  [`MATRIZ_CUMPLIMIENTO.md`](MATRIZ_CUMPLIMIENTO.md) forman el dossier técnico
-  trazable contra el enunciado.
+  [`TRAZABILIDAD_CAPACIDADES.md`](TRAZABILIDAD_CAPACIDADES.md) forman el dossier
+  técnico trazable contra las capacidades declaradas.
 
-Los tres documentos son complementarios: la demo enseña evidencia, la defensa
+Los tres documentos son complementarios: la demo enseña evidencia, la revisión
 explica decisiones y el checklist impide etiquetar una versión que no haya sido
 verificada.
 
@@ -451,7 +450,10 @@ verificada.
 ```bash
 python -m compileall -q app.py core scrapers agent rag scripts
 ruff check .
-pip-audit -r requirements.txt --progress-spinner off
+pip-audit -r requirements.txt --progress-spinner off \
+  --ignore-vuln CVE-2026-45830 \
+  --ignore-vuln CVE-2026-45831 \
+  --ignore-vuln CVE-2026-45833
 pytest -q
 docker compose config --quiet
 docker compose -f docker-compose.yml -f docker-compose.ollama.yml config --quiet

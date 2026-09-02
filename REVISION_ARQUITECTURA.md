@@ -1,17 +1,17 @@
-# Defensa de CENtinela ante CTO
+# Revisión ejecutiva de arquitectura de CENtinela
 
-Guion para una exposición de 8–10 minutos y banco de respuestas para el turno
-de preguntas. Describe la arquitectura final del repositorio: orquestación
+Guía para una revisión de 8–10 minutos y banco de respuestas para el turno de
+preguntas. Describe la arquitectura final del repositorio: orquestación
 determinista donde no aporta valor llamar a un modelo, routing barato en los
 perfiles HTTP, RAG trazable y barreras de calidad antes de persistir o distribuir
 un informe. El recorrido operativo de siete minutos, su preparación y sus
 contingencias están separados en [`GUION_DEMO.md`](GUION_DEMO.md).
 
-Para proyectar los diagramas durante la defensa, usa
-[`ARQUITECTURA.md`](ARQUITECTURA.md). El inventario defendible de versiones y
+Para acompañar la revisión con diagramas, usa
+[`ARQUITECTURA.md`](ARQUITECTURA.md). El inventario consolidado de versiones y
 componentes está en [`STACK_TECNOLOGICO.md`](STACK_TECNOLOGICO.md), y la
-trazabilidad contra el PDF en
-[`MATRIZ_CUMPLIMIENTO.md`](MATRIZ_CUMPLIMIENTO.md).
+trazabilidad de capacidades en
+[`TRAZABILIDAD_CAPACIDADES.md`](TRAZABILIDAD_CAPACIDADES.md).
 
 ## Mensaje central
 
@@ -33,7 +33,7 @@ Respuesta corta a “¿qué has construido?”:
 1. **Evidencia antes que generación.** Los modelos solo reciben fragmentos de un
    catálogo capturado y delimitado como datos no confiables.
 2. **Determinismo donde es suficiente.** Codex evita dos procesos CLI para
-   Planner/filtro; los perfiles HTTP usan el modelo barato exigido y vuelven al
+   Planner/filtro; los perfiles HTTP usan el modelo barato configurado y vuelven al
    contrato determinista si falla.
 3. **Routing por responsabilidad.** Cada proveedor define modelos de Planner,
    filtro/RAG, informe y Judge, con overrides independientes por rol.
@@ -99,7 +99,7 @@ Sol se reserva para el artefacto de mayor valor: la redacción ejecutiva. Terra
 evalúa relevancia, cobertura, claridad y trazabilidad, siempre combinada con la
 validación local de citas. Luna se usa en el chat RAG para responder sobre los
 fragmentos recuperados. En la ruta OpenAI, GPT-4o mini planifica y filtra y
-GPT-4o redacta, cumpliendo el routing solicitado sin acoplar el grafo.”
+GPT-4o redacta, cumpliendo el perfil de routing sin acoplar el grafo."
 
 ### 4:05–5:05 · Runtime Codex y permisos
 
@@ -223,7 +223,7 @@ modelo barato a ambos roles.
 
 ### 5. ¿Por qué Codex CLI en lugar de una API?
 
-Es una decisión posterior y explícita del perfil de entrega: reutilizar la
+Es una decisión explícita del perfil local: reutilizar la
 cuenta Codex del operador y no gestionar API keys. El adaptador aporta ejecución
 no interactiva, JSONL, uso y salida estructurada. Aceptamos mayor latencia de
 proceso y menor idoneidad para multi-tenancy; producción debe reevaluar identidad
@@ -291,12 +291,12 @@ operativos login, dashboard, scraping, alertas, persistencia e índice local. Un
 fallback interno no se presenta como respuesta generativa aprobada. El backend
 puede cambiarse por configuración entre Codex, OpenAI, Ollama y vLLM.
 
-### 16. ¿Cumple el PDF oficial?
+### 16. ¿Cubre el alcance declarado del MVP?
 
-Sí en alcance funcional: agente orquestado, fuentes chilenas, dashboard,
-alertas, RAG, citas, observabilidad y documentación. El PDF oficial es agnóstico
-respecto a un proveedor o familia concreta. La ruta OpenAI conserva GPT-4o mini
-para planificación/filtrado y GPT-4o para redacción, mientras que la factoría
+Sí: agente orquestado, fuentes chilenas, dashboard, alertas, RAG, citas,
+observabilidad y documentación. El contrato funcional es agnóstico respecto a
+un proveedor o familia concreta. La ruta OpenAI conserva GPT-4o mini para
+planificación/filtrado y GPT-4o para redacción, mientras que la factoría
 demuestra portabilidad a Codex y modelos abiertos.
 
 ### 17. ¿Cuál es el mayor riesgo al escalar?
@@ -328,7 +328,7 @@ No decir:
 - “El Judge elimina alucinaciones”.
 - “Siempre recupera las siete fuentes”.
 - “Está listo para producción” o “es multi-tenant”.
-- “El PDF exige una familia GPT o una API concreta”.
+- “La arquitectura depende de una familia GPT o una API concreta”.
 
 Sustituir por:
 

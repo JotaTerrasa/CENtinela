@@ -14,7 +14,7 @@ Este documento separa de forma explícita tres estados:
 | Estado | Significado |
 |---|---|
 | **Implementado - interactivo** | Código ejecutable del repositorio, con SQLite, ChromaDB, fuentes en vivo y un proveedor de IA configurable. |
-| **Implementado - replay público** | Despliegue de demostración en solo lectura que reproduce artefactos de aceptación y no llama a fuentes, modelos ni bases persistentes. |
+| **Implementado - replay público** | Despliegue de demostración en solo lectura que reproduce artefactos validados y no llama a fuentes, modelos ni bases persistentes. |
 | **Objetivo de producción** | Arquitectura recomendada; no forma parte del despliegue actual y requiere trabajo adicional. |
 
 La arquitectura detallada se complementa con
@@ -356,9 +356,9 @@ Existen dos perfiles actuales con objetivos distintos.
 ```mermaid
 flowchart TB
     subgraph CLOUD["Actual - Streamlit Community Cloud"]
-        INTERNET["Evaluador en Internet"]:::actor
+        INTERNET["Visitante de la demo pública"]:::actor
         STC["CENtinela<br/>PUBLIC_DEMO_MODE habilitado"]:::implemented
-        REPLAY[("docs/demo<br/>artefactos inmutables de aceptación")]:::store
+        REPLAY[("docs/demo<br/>artefactos inmutables validados")]:::store
         BLOCK["Sin scraping, SQLite,<br/>indexación ni llamadas LLM"]:::control
         INTERNET --> STC
         REPLAY --> STC

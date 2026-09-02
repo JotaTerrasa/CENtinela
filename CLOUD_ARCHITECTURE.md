@@ -24,7 +24,7 @@ capacidad, operación y gobierno de la evolución cloud.
 
 | Modo | Uso recomendado | Ventajas | Límites principales |
 |---|---|---|---|
-| Codex | Demo y evaluación con una cuenta ChatGPT/Codex | Sin credencial API en CENtinela; calidad gestionada | La sesión de usuario no es una identidad de servicio cloud |
+| Codex | Desarrollo y demo con una cuenta ChatGPT/Codex | Sin credencial API en CENtinela; calidad gestionada | La sesión de usuario no es una identidad de servicio cloud |
 | OpenAI API | Producción gestionada | SLA operativo del proveedor, modelos y escalado gestionados | Coste por token y tratamiento contractual de datos |
 | Ollama | Portátil, local, edge y piloto monoinstancia | Operación sencilla y modelos locales | Sin autenticación en la API local; planificación manual de memoria y concurrencia |
 | vLLM | Producción privada con GPU | Throughput, batching y API compatible con OpenAI | Operación de GPU, capacidad y ciclo de vida de modelos a cargo del equipo |

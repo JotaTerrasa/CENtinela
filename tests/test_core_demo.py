@@ -40,7 +40,7 @@ def test_demo_bundle_hashes_and_payload_provenance_are_verified() -> None:
 
     assert bundle["manifest"]["schema_version"] == 1
     assert report["evaluation"]["approved"] is True
-    assert report["artifact_kind"] == "acceptance_artifact_replay"
+    assert report["artifact_kind"] == "validated_demo_replay"
     assert report["evidence_replay"] is True
     assert report["execution_id"] == "76dbc034-963f-4c01-9af0-cb7dfe064d6a"
     assert report["origin_sha256"].startswith("sha256:")
@@ -54,7 +54,7 @@ def test_demo_bundle_hashes_and_payload_provenance_are_verified() -> None:
 def test_demo_repository_is_static_truthful_and_read_only() -> None:
     repository = get_demo_repository()
     news = repository.list_news(limit=100)
-    snapshot = repository.acceptance_snapshot
+    snapshot = repository.validation_snapshot
 
     assert len(news) == 34
     assert len({item["source"] for item in news}) == 6
@@ -112,10 +112,10 @@ def test_demo_exports_remain_labelled_outside_the_ui() -> None:
     exported = json.loads(raw_json)
 
     assert markdown.startswith(
-        b"<!-- artifact_kind: acceptance_artifact_replay -->"
+        b"<!-- artifact_kind: validated_demo_replay -->"
     )
     assert b"no es una ejecuci\xc3\xb3n nueva" in markdown
-    assert exported["artifact_kind"] == "acceptance_artifact_replay"
+    assert exported["artifact_kind"] == "validated_demo_replay"
     assert exported["evidence_replay"] is True
     assert exported["validated_at"] == "2026-08-13"
     assert exported["origin_sha256"].startswith("sha256:")

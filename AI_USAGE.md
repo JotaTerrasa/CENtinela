@@ -7,10 +7,10 @@ de ingeniería asistida. Su participación incluyó generación y refactorizaci�
 código, diseño de pruebas, revisión de seguridad y reproducibilidad, redacción de
 documentación y validación automatizada de la interfaz local.
 
-El uso de IA no sustituye la responsabilidad sobre la entrega. Las decisiones de
-arquitectura, los límites conocidos y los criterios de aceptación quedan
-expuestos en `DECISIONES_TECNICAS.md`; el comportamiento entregado se comprueba
-mediante pruebas deterministas, ejecución Docker y una prueba end-to-end con
+El uso de IA no sustituye la responsabilidad sobre el proyecto. Las decisiones de
+arquitectura, los límites conocidos y los criterios de calidad quedan expuestos
+en `DECISIONES_TECNICAS.md`; el comportamiento se comprueba mediante pruebas
+deterministas, ejecución Docker y una prueba end-to-end con
 fuentes públicas.
 
 ## IA utilizada dentro del producto
@@ -32,8 +32,8 @@ una respuesta o un informe.
 ## Datos y privacidad
 
 El desarrollo y las pruebas utilizan únicamente código del proyecto y contenido
-regulatorio público de organismos chilenos. No se utilizaron datos internos de
-Grenergy. Las credenciales de ChatGPT/Codex y las claves de proveedores se
+regulatorio público de organismos chilenos. No se utilizaron datos internos o
+privados de terceros. Las credenciales de ChatGPT/Codex y las claves de proveedores se
 mantienen fuera del repositorio, del ZIP y de las trazas de aplicación.
 
 ## Controles de calidad aplicados
