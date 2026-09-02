@@ -17,8 +17,8 @@ secret manager, evaluación dorada y operación formal del proveedor/modelo.
 Las vistas completas de contexto, componentes, secuencias, RAG, observabilidad
 y despliegue están en [ARQUITECTURA.md](ARQUITECTURA.md). El inventario de
 tecnologías y versiones está en
-[STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md), y la correspondencia con el
-enunciado se mantiene en [MATRIZ_CUMPLIMIENTO.md](MATRIZ_CUMPLIMIENTO.md).
+[STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md), y la trazabilidad de capacidades se
+mantiene en [TRAZABILIDAD_CAPACIDADES.md](TRAZABILIDAD_CAPACIDADES.md).
 
 ## Principios
 
@@ -108,9 +108,9 @@ los overrides `*_PROVIDER` permiten routing híbrido.
 | Informe | Sol | GPT-4o | Qwen3.5 9B demo; 27B candidato |
 | Judge | Terra | GPT-4o mini | Qwen3.5 9B demo; Mistral Small 3.1 candidato |
 
-El requisito adicional de implementación fija GPT-4o mini para
-planificación/filtrado y GPT-4o para la redacción final en la ruta API; esos
-defaults están preservados sin atribuirlos al PDF oficial. Codex utiliza
+El perfil de routing de referencia fija GPT-4o mini para planificación/filtrado
+y GPT-4o para la redacción final en la ruta API; esos defaults se preservan como
+decisión propia del proyecto. Codex utiliza
 los tiers Luna/Terra/Sol equivalentes por valor. Ollama usa un solo modelo en la
 demo para evitar cargar varios pesos; producción debe decidir por benchmark.
 
@@ -275,7 +275,7 @@ pesos desde un registro aprobado antes de servir tráfico.
 ## Estrategia de costes
 
 1. Mantener Planner/filtro deterministas en Codex; en API/self-hosted usar el
-   modelo barato exigido y fallar hacia el contrato determinista.
+   modelo barato configurado y fallar hacia el contrato determinista.
 2. Usar modelos pequeños para alto volumen y reservar el modelo de mayor calidad
    para la síntesis que llega al analista.
 3. Limitar documentos, caracteres, `top_k`, revisiones y tokens de salida.
@@ -349,7 +349,7 @@ Estos valores son hipótesis operativas y deben calibrarse con carga real.
 
 ## Conclusión
 
-La arquitectura cumple el objetivo de la prueba sin encerrar el producto en un
+La arquitectura cumple el objetivo del MVP sin encerrar el producto en un
 único proveedor. Codex proporciona una demo de alta calidad con la cuenta del
 operador; OpenAI API ofrece una ruta gestionada y facturable; Ollama facilita
 portabilidad; vLLM permite una evolución cloud privada. La ventaja sostenible no

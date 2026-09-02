@@ -1,11 +1,11 @@
 # Seguridad y modelo de amenazas
 
-## Alcance de esta entrega
+## Alcance del proyecto
 
 CENtinela es un MVP local para analizar información regulatoria pública. La
 imagen Docker expone Streamlit únicamente en `127.0.0.1:8501`; no debe publicarse
 directamente en Internet ni tratarse como un sistema de decisión jurídica. Los
-datos internos de Grenergy quedan explícitamente fuera de alcance.
+datos internos o privados de terceros quedan explícitamente fuera de alcance.
 
 La única excepción publicable sin completar el hardening productivo es
 `PUBLIC_DEMO_MODE`: un replay inmutable que verifica y carga en memoria
@@ -38,7 +38,25 @@ exponer el modo interactivo del MVP.
 | Cita inventada o informe débil | Una barrera determinista comprueba todas las afirmaciones materiales y URLs; después Terra actúa como LLM-as-Judge. Los informes rechazados se etiquetan como tales y no se reutilizan como memoria aprobada. |
 | Fuerza bruta o robo de la base local | Las contraseñas se almacenan con PBKDF2-HMAC y sal individual; el contenedor corre como usuario no root. En producción se sustituirá por SSO y un gestor de secretos. |
 | Exposición accidental de la demo | El modo público no ofrece registro/login ni persistencia por visitante, rechaza credenciales de modelos y bootstrap, valida hashes de los artefactos y se niega a arrancar con `APP_ENV=production`. |
-| Dependencia vulnerable de Chroma | Se fija `chromadb==0.6.3`, fuera del rango afectado por CVE-2026-45829, y Chroma funciona embebido: no existe servidor Chroma expuesto. La telemetría se desactiva en `PersistentClient`, PostHog se fija a una versión compatible y un volumen nuevo evita modificar índices legacy 1.x. |
+| Avisos de seguridad de Chroma | Se fija `chromadb==0.6.3`, fuera del rango de CVE-2026-45829, y Chroma funciona exclusivamente mediante `PersistentClient`: no existe servidor Chroma, API `/api/v2`, autenticación Chroma ni multi-tenancy expuestos. Los avisos CVE-2026-45830, CVE-2026-45831 y CVE-2026-45833 afectan esas rutas de servidor y no publican todavía una versión corregida; CI ignora únicamente esos identificadores y mantiene visibles las excepciones. Nunca se debe exponer esta dependencia como servicio. |
+
+### Excepciones temporales de auditoría
+
+`pip-audit` excluye de su código de salida tres avisos concretos de Chroma, sin
+silenciar otros hallazgos:
+
+- [CVE-2026-45830](https://github.com/advisories/GHSA-2wm9-hf6c-p5cr):
+  autorización entre tenants para usuarios autenticados del servidor;
+- [CVE-2026-45831](https://github.com/advisories/GHSA-xph7-9rjv-w5fr):
+  alcance de permisos en `SimpleRBACAuthorizationProvider`;
+- [CVE-2026-45833](https://github.com/advisories/GHSA-36p7-vc44-83pf):
+  inyección mediante actualización de colecciones en la API `/api/v2`.
+
+El MVP no inicia ni expone esas superficies. Los avisos deben revisarse en cada
+actualización de dependencias y las excepciones se eliminarán cuando exista una
+versión corregida compatible. Si se separa Chroma como servicio, el despliegue
+queda bloqueado hasta migrar a una versión corregida y validar aislamiento,
+autenticación y autorización.
 
 ## Límites conocidos
 

@@ -34,7 +34,7 @@ evidencia histórica.
 - [Informe aprobado en Markdown](sample-report.md)
 - [Informe, citas, dictamen y métricas en JSON](sample-report.json)
 - [Consulta RAG real y fuentes](sample-rag.json)
-- [Resumen de la ejecución de aceptación original](validation-summary.json)
+- [Resumen de la ejecución validada original](validation-summary.json)
 - [Manifest de integridad y traza por llamada](replay-manifest.json)
 
 La captura de acceso no contiene credenciales. El replay es de solo lectura, no
@@ -47,7 +47,7 @@ El bundle permite reproducir la interfaz y verificar hashes, salidas y
 telemetría conservada. No permite reejecutar la cadena de evidencia: el catálogo
 JSON no contiene extractos, fechas por artículo ni la fila CEN del snapshot.
 Por eso el Dashboard muestra N/D también para el método de captura y separa el
-catálogo 34/6 del resultado de aceptación 53/7, sin reconstruir datos ausentes.
+catálogo 34/6 del resultado validado 53/7, sin reconstruir datos ausentes.
 La respuesta RAG se muestra como redacción generada con sus citas; no se
 reutiliza como si fuera el pasaje recuperado, porque ese pasaje no se conservó.
 
@@ -56,7 +56,7 @@ de cada nodo y latencia de cada llamada. El `metrics.latency_seconds` del inform
 es la suma de las dos llamadas generativas; la tabla de Observabilidad muestra
 en la fila principal el tiempo de pared y en el detalle el tiempo por llamada.
 
-`validation-summary.json` conserva las condiciones históricas de la aceptación;
+`validation-summary.json` conserva las condiciones históricas de la validación;
 por eso su recuento de pruebas no se reescribe al crecer la suite. Los portales
 oficiales y los modelos son sistemas vivos: una ejecución interactiva nueva
 puede recuperar otras publicaciones o producir otra redacción. El contrato de

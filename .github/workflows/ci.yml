@@ -17,7 +17,12 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q app.py core scrapers agent rag scripts
       - run: ruff check .
-      - run: pip-audit -r requirements.txt --progress-spinner off
+      - name: Audit dependencies with documented Chroma server exceptions
+        run: >-
+          pip-audit -r requirements.txt --progress-spinner off
+          --ignore-vuln CVE-2026-45830
+          --ignore-vuln CVE-2026-45831
+          --ignore-vuln CVE-2026-45833
       - run: pytest
       - name: Prepare non-secret Compose configuration
         run: cp .env.example .env

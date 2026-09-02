@@ -1,4 +1,4 @@
-"""Replay público, inmutable y sin persistencia de los artefactos de aceptación.
+"""Replay público, inmutable y sin persistencia de los artefactos validados.
 
 Este módulo no abre SQLite ni crea usuarios. Expone un repositorio de solo
 lectura con el subconjunto que realmente quedó conservado en ``docs/demo``.
@@ -80,7 +80,7 @@ def demo_report_payload() -> dict[str, Any]:
     payload = copy.deepcopy(bundle["report"])
     payload["evaluation"] = copy.deepcopy(payload.get("judge") or {})
     payload["status"] = "completed"
-    payload["artifact_kind"] = "acceptance_artifact_replay"
+    payload["artifact_kind"] = "validated_demo_replay"
     payload["evidence_replay"] = True
     payload["evidence_origin"] = "docs/demo/sample-report.json"
     payload["validated_at"] = str(bundle["manifest"]["validated_at"])
@@ -116,7 +116,7 @@ def demo_rag_messages() -> list[dict[str, Any]]:
             "role": "assistant",
             "content": "\n".join(lines),
             "sources": sources,
-            "artifact_kind": "acceptance_artifact_replay",
+            "artifact_kind": "validated_demo_replay",
             "evidence_replay": True,
         },
     ]
@@ -128,7 +128,7 @@ def _call_metadata() -> dict[str, Any]:
         "billing_mode": "subscription",
         "cost_attribution": "not_attributable",
         "token_usage_status": "reported",
-        "artifact_kind": "acceptance_artifact_replay",
+        "artifact_kind": "validated_demo_replay",
         "evidence_replay": True,
     }
 
@@ -156,7 +156,7 @@ class DemoRepository:
                 "fetched_at": None,
                 "keywords": [],
                 "metadata": {
-                    "artifact_kind": "acceptance_artifact_replay",
+                    "artifact_kind": "validated_demo_replay",
                     "origin": "docs/demo/sample-report.json",
                     "capture_method": "unknown",
                 },
@@ -190,14 +190,14 @@ class DemoRepository:
             "execution_id": str(report["execution_id"]),
             "user_id": 0,
             "report_date": str(report["report_date"]),
-            "title": "Informe regulatorio diario · replay de aceptación",
+            "title": "Informe regulatorio diario · replay validado",
             "content": str(report.get("report") or ""),
             "citations": citations,
             "metadata": {
                 "judge": copy.deepcopy(report.get("evaluation") or {}),
                 "errors": [],
                 "metrics": copy.deepcopy(report.get("metrics") or {}),
-                "artifact_kind": "acceptance_artifact_replay",
+                "artifact_kind": "validated_demo_replay",
                 "evidence_replay": True,
                 "evidence_origin": report["evidence_origin"],
                 "validated_at": report["validated_at"],
@@ -214,7 +214,7 @@ class DemoRepository:
                     "provider": "codex_cli",
                     "billing_mode": "subscription",
                     "cost_attribution": "not_attributable",
-                    "artifact_kind": "acceptance_artifact_replay",
+                    "artifact_kind": "validated_demo_replay",
                     "evidence_replay": True,
                     "judge": (
                         copy.deepcopy(report.get("evaluation") or {})
@@ -232,7 +232,7 @@ class DemoRepository:
                     cost_usd=0.0,
                     cost_clp=0.0,
                     metadata={
-                        "artifact_kind": "acceptance_artifact_replay",
+                        "artifact_kind": "validated_demo_replay",
                         "evidence_replay": True,
                     },
                 )
@@ -252,8 +252,8 @@ class DemoRepository:
             self._executions[str(execution["id"])] = execution
 
     @property
-    def acceptance_snapshot(self) -> dict[str, Any]:
-        return copy.deepcopy(load_demo_bundle()["manifest"]["acceptance_snapshot"])
+    def validation_snapshot(self) -> dict[str, Any]:
+        return copy.deepcopy(load_demo_bundle()["manifest"]["validation_snapshot"])
 
     def list_news(
         self,

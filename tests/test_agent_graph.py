@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from agent.graph import MANDATORY_SOURCES, RegulatoryAgent, ReportQualityError
-from core.config import Settings
+from core.config import Settings, business_today
 from core.database import Database
 
 
@@ -68,7 +68,7 @@ class FakeScraper:
                 "source": SOURCE,
                 "url": URL,
                 "source_url": "https://www.cne.cl/prensa/",
-                "published_at": "2026-08-13",
+                "published_at": business_today().isoformat(),
                 "topics": ["BESS"],
             }
         ]

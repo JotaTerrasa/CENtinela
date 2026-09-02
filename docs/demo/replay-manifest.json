@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "artifact_kind": "acceptance_artifact_replay",
+  "artifact_kind": "validated_demo_replay",
   "validated_at": "2026-08-13",
   "trace_origin": {
-    "source": "SQLite local de la ejecución de aceptación",
+    "source": "SQLite local de la ejecución validada",
     "retained_fields": "identificadores, tiempos, modelos, tokens, latencias y categorías de facturación; sin prompts, respuestas privadas ni credenciales"
   },
   "latency_semantics": {
@@ -17,7 +17,7 @@
     "sample-rag.json": "sha256:d581562c4c68c2e3ccbba683bcae578c1207f362dc4e8bf907ebc6efeb9e2a3c",
     "validation-summary.json": "sha256:7753ec8336585f8b648805672d2e190a0f5d383321a2cf55baf65ac60bf8313d"
   },
-  "acceptance_snapshot": {
+  "validation_snapshot": {
     "publications_in_dashboard": 53,
     "sources_recovered": 7,
     "citation_catalog_entries": 34,

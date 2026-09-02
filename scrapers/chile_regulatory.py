@@ -43,7 +43,8 @@ from core.observability import sanitize_error
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_USER_AGENT = (
-    "CENtinela/1.0 (technical-assessment; regulatory-intelligence-research)"
+    "CENtinela/1.0 (regulatory-intelligence-research; "
+    "+https://github.com/JotaTerrasa/CENtinela)"
 )
 READING_PROXY_PREFIX = "https://r.jina.ai/https://"
 CHILE_TIMEZONE = ZoneInfo("America/Santiago")

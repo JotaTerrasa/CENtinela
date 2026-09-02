@@ -16,7 +16,7 @@ uno, acompañarlo de SBOM y promover imágenes por digest.
 
 La arquitectura y el estado real de cada capacidad se documentan en
 [ARQUITECTURA.md](ARQUITECTURA.md) y
-[MATRIZ_CUMPLIMIENTO.md](MATRIZ_CUMPLIMIENTO.md).
+[TRAZABILIDAD_CAPACIDADES.md](TRAZABILIDAD_CAPACIDADES.md).
 
 ## 1. Vista del stack por capas
 
@@ -58,9 +58,14 @@ La arquitectura y el estado real de cada capacidad se documentan en
 
 `chromadb==0.6.3` se mantiene embebido y no se expone como servidor. La versión
 queda fuera del rango vulnerable documentado en el repositorio para
-CVE-2026-45829. Además, `anonymized_telemetry=False` y un volumen específico
-evitan abrir o modificar silenciosamente índices legacy incompatibles. La
-decisión y sus límites están desarrollados en [SECURITY.md](SECURITY.md).
+CVE-2026-45829. Los avisos CVE-2026-45830, CVE-2026-45831 y CVE-2026-45833
+afectan rutas autenticadas, RBAC y actualización de colecciones del servidor;
+esas superficies no existen en el uso local con `PersistentClient` y aún no hay
+una versión corregida publicada. CI conserva excepciones exactas y auditables
+para esos tres identificadores. Además, `anonymized_telemetry=False` y un
+volumen específico evitan abrir o modificar silenciosamente índices legacy
+incompatibles. La decisión y sus límites están desarrollados en
+[SECURITY.md](SECURITY.md).
 
 ## 3. Herramientas de desarrollo y calidad
 
@@ -157,10 +162,10 @@ equivalencia de calidad entre modelos.
 | Evaluator / Judge | `gpt-5.6-terra` | `gpt-4o-mini` | `qwen3.5:9b` | `Qwen/Qwen3.5-9B` |
 | Embeddings | `local-hash-1536` por defecto | `text-embedding-3-small` | `qwen3-embedding:0.6b` | `Qwen/Qwen3-Embedding-0.6B` |
 
-El requisito adicional de routing fijado para esta implementación queda
-preservado en la ruta OpenAI: `gpt-4o-mini` para planificación/filtrado y
-`gpt-4o` para redacción final. El PDF oficial es agnóstico respecto de las
-herramientas y no prescribe esos modelos. El Judge también usa `gpt-4o-mini`.
+El perfil de routing de referencia queda preservado en la ruta OpenAI:
+`gpt-4o-mini` para planificación/filtrado y `gpt-4o` para redacción final. El
+contrato funcional es agnóstico respecto de las herramientas y no prescribe
+esos modelos. El Judge también usa `gpt-4o-mini`.
 Para GPT-4o/4o-mini el adaptador omite `reasoning.effort`, porque esa familia no
 acepta ese parámetro en la superficie utilizada.
 
@@ -261,8 +266,8 @@ del conocimiento del modelo.
 
 La declaración completa, incluidos responsabilidad, privacidad y controles, se
 encuentra en [AI_USAGE.md](AI_USAGE.md). Solo se han utilizado fuentes públicas
-regulatorias; el repositorio no contiene datos internos de Grenergy ni
-credenciales de proveedores.
+regulatorias; el repositorio no contiene datos internos o privados de terceros
+ni credenciales de proveedores.
 
 ## 12. Capacidades deliberadamente no implementadas
 
